@@ -15,6 +15,13 @@ public sealed class AppSettings
     public List<SavedPlace> Favorites { get; set; } = new();
     public List<SavedPlace> Recents { get; set; } = new();
     public int SessionGapMinutes { get; set; } = 30;
+    /// <summary>Ręcznie ustawiony czas lokalny zdjęcia (ścieżka → czas), np. po przesunięciu na liście.</summary>
+    public Dictionary<string, DateTime> TimeOverrides
+    {
+        get => _timeOverrides;
+        set => _timeOverrides = new Dictionary<string, DateTime>(value, StringComparer.OrdinalIgnoreCase);
+    }
+    private Dictionary<string, DateTime> _timeOverrides = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public static class SettingsService

@@ -11,6 +11,7 @@ public sealed class PhotoItem : INotifyPropertyChanged
 
     private ImageSource? _thumb;
     private TimeSpan _clockOffset;
+    private DateTime? _timeOverride;
     private string _sessionLabel = "";
 
     public PhotoItem(string path, PhotoExif exif)
@@ -50,7 +51,21 @@ public sealed class PhotoItem : INotifyPropertyChanged
     public bool DateFromExif { get; }
     /// <summary>Czas lokalny z EXIF (lub data pliku), bez korekty zegara.</summary>
     public DateTime DateTaken { get; }
-    public bool HasValidDate => DateTaken != DateTime.MinValue;
+    public bool HasOwnDate => DateTaken != DateTime.MinValue;
+    public bool HasValidDate => HasOwnDate || TimeOverride is not null;
+
+    /// <summary>Czas lokalny ustawiony ręcznie (przesunięcie na liście); zastępuje datę z EXIF i korektę zegara.</summary>
+    public DateTime? TimeOverride
+    {
+        get => _timeOverride;
+        set
+        {
+            if (_timeOverride == value) return;
+            _timeOverride = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DateText));
+        }
+    }
 
     public TimeSpan ClockOffset
     {
@@ -65,10 +80,18 @@ public sealed class PhotoItem : INotifyPropertyChanged
     }
 
     /// <summary>Czas lokalny po korekcie zegara aparatu.</summary>
-    public DateTime Time => HasValidDate ? DateTaken + ClockOffset : DateTime.MinValue;
+    public DateTime Time => TimeOverride ?? (HasOwnDate ? DateTaken + ClockOffset : DateTime.MinValue);
 
     /// <summary>Czas UTC po korekcie; bez strefy w EXIF przyjmowana strefa systemowa.</summary>
     public DateTime TimeUtc => !HasValidDate ? DateTime.MinValue : UtcFor(Time);
+
+    /// <summary>Czas lokalny (w strefie zdjęcia) odpowiadający podanemu UTC.</summary>
+    public DateTime LocalFor(DateTime utc)
+    {
+        utc = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+        var local = UtcOffset is { } off ? utc + off : TimeZoneInfo.ConvertTimeFromUtc(utc, TimeZoneInfo.Local);
+        return DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+    }
 
     public DateTime UtcFor(DateTime local)
     {
@@ -90,6 +113,9 @@ public sealed class PhotoItem : INotifyPropertyChanged
         get
         {
             if (!HasValidDate) return "brak daty";
+            if (TimeOverride is not null)
+                return Time.ToString("yyyy-MM-dd HH:mm:ss") + " (ręcznie; " +
+                       (HasOwnDate ? "EXIF " + DateTaken.ToString("yyyy-MM-dd HH:mm") : "brak daty") + ")";
             var text = Time.ToString("yyyy-MM-dd HH:mm:ss") + (DateFromExif ? "" : " (plik)");
             if (ClockOffset != TimeSpan.Zero)
                 text += $" (korekta {FormatOffset(ClockOffset)})";

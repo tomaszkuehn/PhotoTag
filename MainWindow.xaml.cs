@@ -32,10 +32,12 @@ public partial class MainWindow : Window
     private string _address = "";
     private PhotoItem? _suggestionSource;
     private PhotoItem? _current;
+    /// <summary>Wybór zdjęcia kliknięciem jego punktu na mapie — nie zmieniaj widoku mapy.</summary>
+    private bool _keepMapView;
     private bool _bulkSelecting;
     private bool _suppressPlaces;
 
-    private sealed record Estimate(GeoPoint Point, string Description, GeoPoint? A, GeoPoint? B, int Zoom, bool FromTrack);
+    private sealed record Estimate(GeoPoint Point, string Description, GeoPoint? A, GeoPoint? B, bool FromTrack);
     private sealed record UndoEntry(string TargetPath, string? TargetBackup, string? OriginalPath, string? OriginalBackup);
     private sealed record PlaceEntry(SavedPlace Place, bool Favorite)
     {
@@ -137,6 +139,12 @@ public partial class MainWindow : Window
                     break;
                 case "key":
                     var key = root.GetProperty("key").GetString()!;
+                    if (key is "ArrowUp" or "ArrowDown" &&
+                        root.TryGetProperty("alt", out var alt) && alt.ValueKind == JsonValueKind.True)
+                    {
+                        MoveInTimeline(key == "ArrowDown");
+                        break;
+                    }
                     HandleKey(key.Length == 1 ? key.ToLowerInvariant() : key,
                         root.GetProperty("shift").GetBoolean(), root.GetProperty("ctrl").GetBoolean());
                     break;
@@ -250,7 +258,15 @@ public partial class MainWindow : Window
         if (!_mapIds.TryGetValue(id, out var item)) return;
         if (_items.Contains(item))
         {
-            MaintainSelection(item);
+            _keepMapView = true;
+            try
+            {
+                MaintainSelection(item);
+            }
+            finally
+            {
+                _keepMapView = false;
+            }
         }
         else
         {
@@ -263,7 +279,7 @@ public partial class MainWindow : Window
         PostToMap(new
         {
             type = "estimate",
-            lat = est.Point.Lat, lng = est.Point.Lng, zoom = est.Zoom,
+            lat = est.Point.Lat, lng = est.Point.Lng,
             aLat = est.A?.Lat, aLng = est.A?.Lng,
             bLat = est.B?.Lat, bLng = est.B?.Lng,
             label = est.FromTrack ? "Pozycja ze śladu GPS" : "Pozycja szacowana (interpolacja czasu)",
@@ -271,8 +287,9 @@ public partial class MainWindow : Window
         });
     }
 
-    private void SendMapSetView(GeoPoint point, int zoom = 13, double? dir = null) =>
-        PostToMap(new { type = "setView", lat = point.Lat, lng = point.Lng, zoom, dir });
+    /// <summary>Ustawia znacznik; bez <paramref name="zoom"/> mapa tylko przesuwa się, zachowując powiększenie.</summary>
+    private void SendMapSetView(GeoPoint point, int? zoom = null, double? dir = null, bool keepView = false) =>
+        PostToMap(new { type = "setView", lat = point.Lat, lng = point.Lng, zoom, dir, keep = keepView });
 
     // ---------------------------------------------------------------- folder i lista
 
@@ -318,7 +335,11 @@ public partial class MainWindow : Window
             locptPaths.Contains(ResolveTargetPath(i.Path)));
 
         foreach (var item in found)
+        {
             item.ClockOffset = OffsetFor(item.Camera);
+            if (_settings.TimeOverrides.TryGetValue(item.Path, out var manual))
+                item.TimeOverride = manual;
+        }
 
         _current = null;
         PreviewImage.Source = null;
@@ -454,7 +475,7 @@ public partial class MainWindow : Window
             _estimate = null;
             _suggestionSource = null;
             _pendingDirection = item.Direction;
-            SendMapSetView(item.Gps!, 15, item.Direction);
+            SendMapSetView(item.Gps!, dir: item.Direction, keepView: _keepMapView);
         }
         else if (GetEstimate(item) is { } est)
         {
@@ -468,7 +489,7 @@ public partial class MainWindow : Window
             _estimate = null;
             _suggestionSource = sugg.Source;
             _pendingDirection = null;
-            SendMapSetView(sugg.Source.Gps!, sugg.Zoom);
+            SendMapSetView(sugg.Source.Gps!);
         }
         else
         {
@@ -663,6 +684,12 @@ public partial class MainWindow : Window
         }
         if (Keyboard.FocusedElement is TextBox or ComboBox or ComboBoxItem)
             return;
+        if (e.Key == Key.System && e.SystemKey is Key.Up or Key.Down && Keyboard.Modifiers == ModifierKeys.Alt)
+        {
+            MoveInTimeline(e.SystemKey == Key.Down);
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Return && Keyboard.FocusedElement is System.Windows.Controls.Primitives.ButtonBase)
             return;
         var key = e.Key switch
@@ -729,7 +756,7 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- szacowanie pozycji
 
-    private (PhotoItem Source, double DeltaMinutes, int Zoom)? FindNearestTagged(PhotoItem item)
+    private (PhotoItem Source, double DeltaMinutes)? FindNearestTagged(PhotoItem item)
     {
         if (!item.HasValidDate) return null;
 
@@ -741,8 +768,7 @@ public partial class MainWindow : Window
             .FirstOrDefault();
         if (best.Source is null) return null;
 
-        var zoom = best.Delta <= 5 ? 15 : best.Delta <= 60 ? 13 : 6;
-        return (best.Source, best.Delta, zoom);
+        return (best.Source, best.Delta);
     }
 
     private static string FormatDelta(double minutes) =>
@@ -761,7 +787,7 @@ public partial class MainWindow : Window
             return new Estimate(m.Point, desc,
                 m.Before is null ? null : new GeoPoint(m.Before.Lat, m.Before.Lng),
                 m.After is null ? null : new GeoPoint(m.After.Lat, m.After.Lng),
-                16, true);
+                true);
         }
 
         PhotoItem? before = null, after = null;
@@ -783,7 +809,7 @@ public partial class MainWindow : Window
             new GeoPoint(before.Gps!.Lat + (after.Gps!.Lat - before.Gps.Lat) * f,
                          before.Gps.Lng + (after.Gps.Lng - before.Gps.Lng) * f),
             $"interpolacja czasu: {before.FileName} [{before.Time:HH:mm}] → {after.FileName} [{after.Time:HH:mm}] (Δ {FormatDelta(span)})",
-            before.Gps, after.Gps, 15, false);
+            before.Gps, after.Gps, false);
     }
 
     // ---------------------------------------------------------------- zapis
@@ -906,6 +932,11 @@ public partial class MainWindow : Window
                 {
                     originalBackup = System.IO.Path.Combine(UndoDir, Guid.NewGuid().ToString("N") + System.IO.Path.GetExtension(target.Path));
                     File.Move(target.Path, originalBackup);
+                }
+                if (target.TimeOverride is { } manual && !inPlace)
+                {
+                    _settings.TimeOverrides[targetPath] = manual;
+                    SettingsService.Save(_settings);
                 }
                 undo.Add(new UndoEntry(targetPath, targetBackup, originalBackup is null ? null : target.Path, originalBackup));
                 done++;

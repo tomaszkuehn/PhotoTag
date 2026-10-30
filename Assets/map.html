@@ -145,14 +145,15 @@
         L.circleMarker([d.lat, d.lng],
             { radius: 7, color: '#e68a00', weight: 3, fillColor: '#ffb14d', fillOpacity: 0.9 })
             .addTo(estLayer).bindTooltip(d.label || 'Pozycja szacowana');
-        map.setView([d.lat, d.lng], d.zoom || 15);
+        map.panTo([d.lat, d.lng]);
         setDirection(d.dir, false);
         setMarker(d.lat, d.lng);
     }
 
-    function setView(lat, lng, zoom, dir) {
+    function setView(lat, lng, zoom, dir, keep) {
         estLayer.clearLayers();
-        map.setView([lat, lng], zoom || 13);
+        // bez zoom (wybór zdjęcia) tylko przesunięcie — powiększenie ustawia użytkownik
+        if (!keep) zoom ? map.setView([lat, lng], zoom) : map.panTo([lat, lng]);
         setDirection(dir, false);
         setMarker(lat, lng);
     }
@@ -348,14 +349,14 @@
         const keys = ['Enter', 'n', 'N', 'p', 'P', 'g', 'G', 's', 'S', 'z', 'Z', 'c', 'C', 'v', 'V', 'Escape', 'ArrowUp', 'ArrowDown'];
         if (!keys.includes(e.key)) return;
         e.preventDefault();
-        send({ type: 'key', key: e.key, shift: e.shiftKey, ctrl: e.ctrlKey });
+        send({ type: 'key', key: e.key, shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey });
     });
 
     if (hasHost) {
         window.chrome.webview.addEventListener('message', e => {
             const d = e.data;
             if (!d) return;
-            if (d.type === 'setView') setView(d.lat, d.lng, d.zoom, d.dir);
+            if (d.type === 'setView') setView(d.lat, d.lng, d.zoom, d.dir, d.keep);
             else if (d.type === 'estimate') showEstimate(d);
             else if (d.type === 'photos') showPhotos(d);
             else if (d.type === 'track') showTrack(d);

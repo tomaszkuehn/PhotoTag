@@ -22,7 +22,8 @@ Aplikacja desktopowa (WPF, .NET 8) do szybkiego uzupełniania współrzędnych G
 - **Źródło GPS**: zdjęcia z pozycją zapisaną przez aparat/telefon w chwili zrobienia (są znaczniki `GPSTimeStamp`/`GPSDateStamp`/`GPSAltitude`/`GPSProcessingMethod` itp.) oznaczone „📷 GPS z aparatu” i złotym kolorem na liście i mapie; pozycje dopisane przez PhotoTag (`GPSProcessingMethod = MANUAL` lub plik `_LOCPT`) — „GPS dodany”; same współrzędne bez innych znaczników — „GPS” (źródło nieznane).
 - **Zdjęcia z GPS na mapie**: zielone (złote = GPS z aparatu) punkty (miniatura po najechaniu, klik = wybór zdjęcia) i fioletowa trasa w kolejności czasu; warstwy w przełączniku mapy.
 - **Foldery referencyjne** (np. zdjęcia z telefonu, z podfolderami): ich zdjęcia z GPS służą tylko jako źródło podpowiedzi i interpolacji (niebieskie punkty), nie trafiają na listę.
-- Sugestia lokalizacji przy wyborze zdjęcia bez GPS: ślad GPS → interpolacja między zdjęciami z GPS (Δ ≤ 2 h, także z folderów ref.) → najbliższe zdjęcie z GPS (Δ≤5 min → zoom 15, ≤60 min → zoom 13, ≤12 h → zoom 6).
+- Sugestia lokalizacji przy wyborze zdjęcia bez GPS: ślad GPS → interpolacja między zdjęciami z GPS (Δ ≤ 2 h, także z folderów ref.) → najbliższe zdjęcie z GPS (Δ ≤ 12 h). Wybór zdjęcia (z listy lub klik punktu na mapie) tylko przesuwa mapę — powiększenie pozostaje takie, jak ustawił użytkownik.
+- **Przesuwanie na osi czasu** (zdjęcia ze złą datą): przeciągnij zdjęcie (lub zaznaczoną grupę) na liście w odpowiednie miejsce — dostaje czas o 1 s przed/po zdjęciu, na które upuszczono (gdy brak miejsca — równomiernie między sąsiadami); `Alt+↑`/`Alt+↓` przesuwa o jedną pozycję; prawy klik → „Ustaw datę i godzinę…” (grupa zachowuje odstępy) / „Przywróć datę z EXIF”. Czas ręczny (oznaczony „ręcznie”) zastępuje datę EXIF i korektę zegara przy sortowaniu, sesjach, śladzie GPS i interpolacji; jest pamiętany w ustawieniach (także dla pliku `_LOCPT`), pliku nie zmienia.
 - **Sesje**: lista grupowana po przerwie w czasie (domyślnie 30 min); „zaznacz” w nagłówku lub `G` zaznacza całą sesję. Wiele zdjęć: Ctrl/Shift + klik.
 - **Miejsca**: ulubione (★ Zapisz) i ostatnio użyte (automatycznie po zapisie); kopiuj/wklej punkt (Ctrl+C / Ctrl+V — współrzędne, link Google Maps/OSM lub adres).
 - Zapis GPS:
@@ -34,8 +35,8 @@ Aplikacja desktopowa (WPF, .NET 8) do szybkiego uzupełniania współrzędnych G
   - „Uzupełnij automatycznie” — wszystkie zdjęcia bez GPS ze śladu GPS lub interpolacji,
   - **Cofnij** (Ctrl+Z) — przywraca stan sprzed ostatnich zapisów (kopie w `%TEMP%\PhotoTag\undo`, czyszczone przy starcie),
   - po zapisie automatycznie zaznaczane jest kolejne zdjęcie bez GPS.
-- Skróty (działają też przy fokusie na mapie): `Enter` zapis, `N` / `Shift+N` następne/poprzednie bez GPS, `G` sesja, `S` Street View, `Ctrl+C`/`Ctrl+V`, `Ctrl+Z`, `Esc`.
-- Ustawienia (ostatni folder, ślady, foldery ref., zegary, miejsca): `%APPDATA%\PhotoTag\settings.json`.
+- Skróty (działają też przy fokusie na mapie): `Enter` zapis, `N` / `Shift+N` następne/poprzednie bez GPS, `G` sesja, `S` Street View, `Ctrl+C`/`Ctrl+V`, `Ctrl+Z`, `Alt+↑`/`Alt+↓` przesunięcie na osi czasu, `Esc`.
+- Ustawienia (ostatni folder, ślady, foldery ref., zegary, miejsca, ręczne czasy zdjęć): `%APPDATA%\PhotoTag\settings.json`.
 
 ## Uruchomienie
 
@@ -61,6 +62,7 @@ Wymaga .NET SDK 8 oraz połączenia z internetem (kafelki mapy, Nominatim, Overp
 - `Services/SettingsService.cs` — trwałe ustawienia (JSON w `%APPDATA%`).
 - `Services/Imaging.cs` — dekodowanie miniatur/podglądów z uwzględnieniem orientacji EXIF.
 - `Assets/map.html` — mapa: warstwy, wyszukiwanie, komunikacja z WPF przez `window.chrome.webview.postMessage` / `setView(lat,lng,zoom)`.
+- `MainWindow.Timeline.cs` — ręczny czas zdjęć: przeciąganie na liście (adorner linii wstawienia), `Alt+↑/↓`, menu kontekstowe.
 - `MainWindow.xaml(.cs)` — UI, sugerowanie punktów, zapis zbiorczy, zarządzanie trybami ( mapa / Street View / powiększenie). WebView2 jest natywnym HWND i wypada NAD elementami WPF — nakładki wymagają zwijania panelu mapy (`MapView.Visibility`).
 
 ## Ograniczenia

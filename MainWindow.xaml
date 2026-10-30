@@ -74,7 +74,23 @@
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.IsVirtualizingWhenGrouping="True"
-                     MouseDoubleClick="PhotoList_MouseDoubleCick">
+                     MouseDoubleClick="PhotoList_MouseDoubleCick"
+                     AllowDrop="True"
+                     PreviewMouseLeftButtonDown="PhotoList_PreviewMouseLeftButtonDown"
+                     PreviewMouseMove="PhotoList_PreviewMouseMove"
+                     PreviewMouseLeftButtonUp="PhotoList_PreviewMouseLeftButtonUp"
+                     DragOver="PhotoList_DragOver"
+                     DragLeave="PhotoList_DragLeave"
+                     Drop="PhotoList_Drop">
+                <ListBox.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Ustaw datę i godzinę…" Click="SetTimeMenu_Click"/>
+                        <MenuItem Header="Przesuń wcześniej (Alt+↑)" Click="MoveEarlierMenu_Click"/>
+                        <MenuItem Header="Przesuń później (Alt+↓)" Click="MoveLaterMenu_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Przywróć datę z EXIF" Click="ResetTimeMenu_Click"/>
+                    </ContextMenu>
+                </ListBox.ContextMenu>
                 <ListBox.GroupStyle>
                     <GroupStyle>
                         <GroupStyle.HeaderTemplate>
@@ -193,7 +209,7 @@
                                    Foreground="#555" TextTrimming="CharacterEllipsis" MaxWidth="520"/>
                     </WrapPanel>
                     <TextBlock Foreground="#888" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Text="Mapa: klik = punkt, przeciągnij = korekta, prawy klik = kierunek zdjęcia. Skróty: Enter zapis · N / Shift+N następne/poprzednie bez GPS · G zaznacz sesję · S Street View · Ctrl+C/V kopiuj/wklej punkt · Ctrl+Z cofnij"/>
+                               Text="Mapa: klik = punkt, przeciągnij = korekta, prawy klik = kierunek zdjęcia. Skróty: Enter zapis · N / Shift+N następne/poprzednie bez GPS · G zaznacz sesję · S Street View · Ctrl+C/V kopiuj/wklej punkt · Ctrl+Z cofnij · Lista: przeciągnij zdjęcie lub Alt+↑/↓ = przesuń na osi czasu (zła data)"/>
                 </StackPanel>
 
                 <Border Grid.Row="2" CornerRadius="4" BorderBrush="#CCC" BorderThickness="1">
