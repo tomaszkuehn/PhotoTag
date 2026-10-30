@@ -11,32 +11,69 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Padding="8" Background="#F1F1F1" BorderBrush="#DDD" BorderThickness="0,0,0,1">
-            <StackPanel Orientation="Horizontal">
+        <Border Grid.Row="0" Padding="8,4" Background="#F1F1F1" BorderBrush="#DDD" BorderThickness="0,0,0,1">
+            <WrapPanel Orientation="Horizontal">
+                <WrapPanel.Resources>
+                    <Style TargetType="Button">
+                        <Setter Property="Margin" Value="6,3,0,3"/>
+                        <Setter Property="Padding" Value="10,4"/>
+                    </Style>
+                </WrapPanel.Resources>
                 <TextBlock Text="Folder:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                <TextBox x:Name="FolderBox" Width="480" IsReadOnly="True" VerticalContentAlignment="Center"/>
-                <Button x:Name="PickFolderBtn" Content="Wybierz folder…" Margin="6,0,0,0" Padding="10,5" Click="PickFolderBtn_Click"/>
-                <Button x:Name="RefreshBtn" Content="Odśwież" Margin="6,0,0,0" Padding="10,5" Click="RefreshBtn_Click"/>
-                <TextBlock x:Name="CountText" Margin="18,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
-            </StackPanel>
+                <TextBox x:Name="FolderBox" Width="360" IsReadOnly="True" VerticalContentAlignment="Center" Margin="0,3"/>
+                <Button x:Name="PickFolderBtn" Content="Wybierz folder…" Click="PickFolderBtn_Click"/>
+                <Button x:Name="RefreshBtn" Content="Odśwież" Click="RefreshBtn_Click"/>
+                <TextBlock x:Name="CountText" Margin="12,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+
+                <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="10,4"/>
+                <TextBlock Text="Ślad GPS:" VerticalAlignment="Center"/>
+                <Button Content="Wczytaj…" Click="LoadTrackBtn_Click"
+                        ToolTip="GPX, KML lub JSON z historii lokalizacji Google (Records.json, Timeline.json, Semantic Location History)"/>
+                <Button Content="Wyczyść" Click="ClearTrackBtn_Click"/>
+                <TextBlock x:Name="TrackInfo" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="#555"/>
+
+                <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="10,4"/>
+                <TextBlock Text="Foldery ref.:" VerticalAlignment="Center"
+                           ToolTip="Zdjęcia z GPS z tych folderów (np. z telefonu) służą tylko jako źródło podpowiedzi"/>
+                <Button Content="+ Dodaj…" Click="AddRefFolderBtn_Click"/>
+                <Button Content="Wyczyść" Click="ClearRefFoldersBtn_Click"/>
+                <TextBlock x:Name="RefInfo" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="#555"/>
+
+                <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="10,4"/>
+                <TextBlock Text="Zegar aparatu:" VerticalAlignment="Center"/>
+                <ComboBox x:Name="CameraCombo" Width="190" Margin="6,3,0,3" SelectionChanged="CameraCombo_SelectionChanged"/>
+                <TextBox x:Name="OffsetBox" Width="90" Margin="6,3,0,3" VerticalContentAlignment="Center"
+                         ToolTip="Przesunięcie dodawane do czasu EXIF, np. +01:00:00, -00:03:20, +1.00:00:00 (dni)"/>
+                <Button Content="Ustaw" Click="SetOffsetBtn_Click"/>
+                <Button Content="Kalibruj" Click="CalibrateBtn_Click"
+                        ToolTip="Zaznacz 2 zdjęcia tej samej sceny z różnych aparatów (jedno z GPS) albo 1 zdjęcie i wskaż na mapie, gdzie było zrobione (wymaga śladu GPS)"/>
+
+                <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="10,4"/>
+                <TextBlock Text="Nowa sesja po przerwie" VerticalAlignment="Center"/>
+                <TextBox x:Name="SessionGapBox" Width="40" Margin="6,3,0,3" VerticalContentAlignment="Center"
+                         LostFocus="SessionGapBox_LostFocus" KeyDown="SessionGapBox_KeyDown"/>
+                <TextBlock Text="min" VerticalAlignment="Center" Margin="4,0,0,0"/>
+            </WrapPanel>
         </Border>
 
         <StatusBar Grid.Row="2">
             <StatusBarItem>
-                <TextBlock x:Name="StatusText" Text="Wybierz folder ze zdjęciami"/>
+                <TextBlock x:Name="StatusText" Text="Wybierz folder ze zdjęciami" TextTrimming="CharacterEllipsis"/>
             </StatusBarItem>
         </StatusBar>
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="330"/>
+                <ColumnDefinition Width="340"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <ListBox x:Name="PhotoList" Grid.Column="0" Margin="6"
+                     SelectionMode="Extended"
                      HorizontalContentAlignment="Stretch"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                      MouseDoubleClick="PhotoList_MouseDoubleCick">
                 <ListBox.Resources>
                     <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
@@ -44,6 +81,21 @@
                     <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}"
                                      Color="White"/>
                 </ListBox.Resources>
+                <ListBox.GroupStyle>
+                    <GroupStyle>
+                        <GroupStyle.HeaderTemplate>
+                            <DataTemplate>
+                                <DockPanel Background="#E4E9F0" Margin="0,6,0,2">
+                                    <Button DockPanel.Dock="Right" Content="zaznacz" Padding="6,1" Margin="4,2"
+                                            FontSize="11" Click="SelectSessionBtn_Click"
+                                            ToolTip="Zaznacz zdjęcia tej sesji (G)"/>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11"
+                                               Margin="6,3" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                </DockPanel>
+                            </DataTemplate>
+                        </GroupStyle.HeaderTemplate>
+                    </GroupStyle>
+                </ListBox.GroupStyle>
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
                         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -66,7 +118,9 @@
                                     <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusBrush}"
                                                FontSize="11" Margin="0,2,0,0"/>
                                     <TextBlock Text="{Binding DateText}" FontSize="11" Foreground="#666"
-                                               Margin="0,1,0,0"/>
+                                               Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Camera}" FontSize="10" Foreground="#888"
+                                               Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -88,17 +142,48 @@
                     <Image x:Name="PreviewImage" Margin="4" Stretch="Uniform"/>
                 </Border>
 
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6">
-                    <Button x:Name="ApplyButton" Content="Dodaj lokalizację i zapisz jako …_LOCPT"
-                            Padding="12,7" FontWeight="SemiBold" Click="ApplyButton_Click"/>
-                    <Button x:Name="InterpolateButton" Content="Interpoluj (Δ≤2h)"
-                            Padding="12,7" Margin="12,0,0,0" Click="InterpolateButton_Click"/>
-                    <CheckBox x:Name="ApplyAllCheck" Content="wszystkie bez GPS" Margin="12,0,0,0"
-                              VerticalAlignment="Center"/>
-                    <CheckBox x:Name="DeleteOriginalCheck" Content="usuń oryginał po zapisie" Margin="12,0,0,0"
-                              VerticalAlignment="Center"/>
-                    <TextBlock Text="Mapa: klik = wybór punktu, przeciągnij znacznik = korekta; szukaj w pasku mapy"
-                               Margin="18,0,0,0" VerticalAlignment="Center" Foreground="#777"/>
+                <StackPanel Grid.Row="1" Margin="0,4">
+                    <WrapPanel Orientation="Horizontal">
+                        <WrapPanel.Resources>
+                            <Style TargetType="Button">
+                                <Setter Property="Margin" Value="0,2,8,2"/>
+                                <Setter Property="Padding" Value="10,5"/>
+                            </Style>
+                            <Style TargetType="CheckBox">
+                                <Setter Property="Margin" Value="4,2,8,2"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                            </Style>
+                        </WrapPanel.Resources>
+                        <Button x:Name="ApplyButton" Content="Zapisz lokalizację → …_LOCPT (Enter)"
+                                FontWeight="SemiBold" Click="ApplyButton_Click"
+                                ToolTip="Zapisuje punkt mapy (i kierunek) w zaznaczonych zdjęciach"/>
+                        <Button x:Name="InterpolateButton" Content="Uzupełnij automatycznie"
+                                Click="InterpolateButton_Click"
+                                ToolTip="Wszystkie zdjęcia bez GPS: ślad GPS, a gdy go brak — interpolacja między zdjęciami z GPS (Δ≤2 h)"/>
+                        <Button x:Name="UndoButton" Content="Cofnij zapis (Ctrl+Z)" Click="UndoButton_Click" IsEnabled="False"/>
+                        <CheckBox x:Name="ApplyAllCheck" Content="wszystkie bez GPS"/>
+                        <CheckBox x:Name="DeleteOriginalCheck" Content="usuń oryginał po zapisie"/>
+                    </WrapPanel>
+                    <WrapPanel Orientation="Horizontal">
+                        <WrapPanel.Resources>
+                            <Style TargetType="Button">
+                                <Setter Property="Margin" Value="6,2,0,2"/>
+                                <Setter Property="Padding" Value="8,3"/>
+                            </Style>
+                        </WrapPanel.Resources>
+                        <TextBlock Text="Miejsca:" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="PlacesCombo" Width="260" Margin="6,2,0,2"
+                                  DisplayMemberPath="Display" SelectionChanged="PlacesCombo_SelectionChanged"/>
+                        <Button Content="★ Zapisz" Click="AddFavoriteBtn_Click" ToolTip="Dodaj punkt mapy do ulubionych"/>
+                        <Button Content="Usuń" Click="RemovePlaceBtn_Click" ToolTip="Usuń wybrane miejsce z listy"/>
+                        <Button Content="Kopiuj (Ctrl+C)" Click="CopyBtn_Click"/>
+                        <Button Content="Wklej (Ctrl+V)" Click="PasteBtn_Click"
+                                ToolTip="Współrzędne, link Google Maps/OSM lub adres ze schowka"/>
+                        <TextBlock x:Name="AddressText" Margin="12,0,0,0" VerticalAlignment="Center"
+                                   Foreground="#555" TextTrimming="CharacterEllipsis" MaxWidth="520"/>
+                    </WrapPanel>
+                    <TextBlock Foreground="#888" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
+                               Text="Mapa: klik = punkt, przeciągnij = korekta, prawy klik = kierunek zdjęcia. Skróty: Enter zapis · N / Shift+N następne/poprzednie bez GPS · G zaznacz sesję · S Street View · Ctrl+C/V kopiuj/wklej punkt · Ctrl+Z cofnij"/>
                 </StackPanel>
 
                 <Border Grid.Row="2" CornerRadius="4" BorderBrush="#CCC" BorderThickness="1">

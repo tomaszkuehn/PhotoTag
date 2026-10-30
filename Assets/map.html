@@ -9,8 +9,9 @@
     #map { height: 100%; }
     #toolbar {
         position: absolute; top: 8px; left: 56px; right: 8px; z-index: 1000;
-        display: flex; gap: 6px;
+        display: flex; gap: 6px; pointer-events: none;
     }
+    #toolbar > * { pointer-events: auto; }
     #q {
         flex: 1; max-width: 420px; padding: 7px 10px;
         border: 1px solid #999; border-radius: 6px; font-size: 13px;
@@ -20,27 +21,35 @@
         background: #fff; cursor: pointer; font-size: 13px;
     }
     #toolbar button:hover { background: #eef6ff; }
+    #dirClear { display: none; }
     #coords {
-        position: absolute; bottom: 8px; left: 8px; z-index: 1000;
+        position: absolute; bottom: 8px; left: 8px; z-index: 1000; max-width: 70%;
         background: rgba(255,255,255,.95); padding: 6px 10px; border-radius: 6px;
         font-family: Consolas, monospace; font-size: 13px;
     }
+    #address { font-family: 'Segoe UI', sans-serif; font-size: 12px; color: #444; margin-top: 2px; }
+    .thumb-tip img { display: block; max-width: 180px; max-height: 140px; margin-top: 4px; }
 </style>
 </head>
 <body>
 <div id="toolbar">
-    <input id="q" placeholder="Szukaj miejsca lub adresu…"/>
+    <input id="q" placeholder="Miejsce, adres, współrzędne (50.06, 19.94 / 50°03'N 19°56'E) lub link Google Maps…"/>
     <button onclick="search()">Szukaj</button>
     <button onclick="openStreetView()">Street View ↗</button>
+    <button id="dirClear" onclick="setDirection(null, true)" title="Usuń kierunek zdjęcia">Kierunek ✕</button>
 </div>
 <div id="map"></div>
-<div id="coords">Kliknij na mapie, aby wybrać lokalizację</div>
+<div id="coords"><div id="coordText">Klik = wybór punktu · prawy klik = kierunek zdjęcia</div><div id="address"></div></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     const map = L.map('map').setView([52.0, 21.0], 6);
     const streetLayer = L.layerGroup().addTo(map);
     const estLayer = L.layerGroup().addTo(map);
+    const dirLayer = L.layerGroup().addTo(map);
+    const photoLayer = L.layerGroup().addTo(map);
+    const routeLayer = L.layerGroup().addTo(map);
+    const trackLayer = L.layerGroup().addTo(map);
     const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '&copy; OpenStreetMap'
     });
@@ -48,28 +57,37 @@
         maxZoom: 19, attribution: '&copy; Esri'
     });
     osm.addTo(map);
-    L.control.layers({ 'Mapa (OSM)': osm, 'Satelita': sat }).addTo(map);
+    L.control.layers({ 'Mapa (OSM)': osm, 'Satelita': sat }, {
+        'Zdjęcia z GPS': photoLayer,
+        'Trasa zdjęć': routeLayer,
+        'Ślad GPS': trackLayer,
+    }).addTo(map);
+
+    const hasHost = !!(window.chrome && window.chrome.webview);
+    function send(msg) { if (hasHost) window.chrome.webview.postMessage(msg); }
 
     let marker = null;
+    let direction = null;
 
     function setMarker(lat, lng) {
         if (marker) {
             marker.setLatLng([lat, lng]);
         } else {
             marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+            marker.on('drag', drawDirection);
             marker.on('dragend', post);
         }
+        drawDirection();
         post();
     }
 
     function post() {
         if (!marker) return;
         const ll = marker.getLatLng();
-        document.getElementById('coords').textContent =
-            ll.lat.toFixed(6) + ', ' + ll.lng.toFixed(6);
-        if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.postMessage({ type: 'pick', lat: ll.lat, lng: ll.lng });
-        }
+        updateCoords(ll.lat.toFixed(6) + ', ' + ll.lng.toFixed(6) +
+            (direction !== null ? `  ↗ ${direction.toFixed(0)}°` : ''));
+        send({ type: 'pick', lat: ll.lat, lng: ll.lng });
+        scheduleReverse(ll.lat, ll.lng);
     }
 
     map.on('click', e => {
@@ -77,26 +95,159 @@
         setMarker(e.latlng.lat, e.latlng.lng);
     });
 
-    function showEstimate(lat, lng, aLat, aLng, bLat, bLng, zoom) {
+    // Prawy klik: kierunek, w którym patrzył aparat (od znacznika do klikniętego punktu).
+    map.on('contextmenu', e => {
+        if (!marker) {
+            setMarker(e.latlng.lat, e.latlng.lng);
+            return;
+        }
+        setDirection(bearing(marker.getLatLng(), e.latlng), true);
+    });
+
+    function bearing(a, b) {
+        const r = Math.PI / 180;
+        const y = Math.sin((b.lng - a.lng) * r) * Math.cos(b.lat * r);
+        const x = Math.cos(a.lat * r) * Math.sin(b.lat * r) -
+                  Math.sin(a.lat * r) * Math.cos(b.lat * r) * Math.cos((b.lng - a.lng) * r);
+        return (Math.atan2(y, x) / r + 360) % 360;
+    }
+
+    function setDirection(deg, notify) {
+        direction = (deg === null || deg === undefined) ? null : deg;
+        document.getElementById('dirClear').style.display = direction === null ? 'none' : 'block';
+        drawDirection();
+        if (marker) {
+            const ll = marker.getLatLng();
+            updateCoords(ll.lat.toFixed(6) + ', ' + ll.lng.toFixed(6) +
+                (direction !== null ? `  ↗ ${direction.toFixed(0)}°` : ''));
+        }
+        if (notify) send({ type: 'dir', deg: direction });
+    }
+
+    function drawDirection() {
+        dirLayer.clearLayers();
+        if (!marker || direction === null) return;
+        const c = map.latLngToLayerPoint(marker.getLatLng());
+        const pts = [marker.getLatLng()];
+        for (let a = direction - 30; a <= direction + 30.01; a += 5) {
+            const rad = a * Math.PI / 180;
+            pts.push(map.layerPointToLatLng(L.point(c.x + 90 * Math.sin(rad), c.y - 90 * Math.cos(rad))));
+        }
+        L.polygon(pts, { color: '#d6336c', weight: 2, fillOpacity: 0.25, interactive: false }).addTo(dirLayer);
+    }
+    map.on('zoomend', drawDirection);
+
+    function showEstimate(d) {
         estLayer.clearLayers();
-        L.polyline([[aLat, aLng], [bLat, bLng]],
-            { color: '#e68a00', weight: 3, dashArray: '8 6', opacity: 0.85 }).addTo(estLayer);
-        L.circleMarker([lat, lng],
+        if (d.aLat !== undefined && d.aLat !== null)
+            L.polyline([[d.aLat, d.aLng], [d.bLat, d.bLng]],
+                { color: '#e68a00', weight: 3, dashArray: '8 6', opacity: 0.85 }).addTo(estLayer);
+        L.circleMarker([d.lat, d.lng],
             { radius: 7, color: '#e68a00', weight: 3, fillColor: '#ffb14d', fillOpacity: 0.9 })
-            .addTo(estLayer).bindTooltip('Pozycja szacowana');
-        updateCoords('Pozycja szacowana (interpolacja czasu): ' + lat.toFixed(6) + ', ' + lng.toFixed(6));
-        map.setView([lat, lng], zoom || 15);
-        setMarker(lat, lng);
+            .addTo(estLayer).bindTooltip(d.label || 'Pozycja szacowana');
+        map.setView([d.lat, d.lng], d.zoom || 15);
+        setDirection(d.dir, false);
+        setMarker(d.lat, d.lng);
     }
 
-    function setView(lat, lng, zoom) {
+    function setView(lat, lng, zoom, dir) {
+        estLayer.clearLayers();
         map.setView([lat, lng], zoom || 13);
+        setDirection(dir, false);
         setMarker(lat, lng);
     }
 
-    async function search() {
-        const q = document.getElementById('q').value.trim();
+    // --- zdjęcia z GPS, trasa, ślad ---
+    const photoMarkers = {};
+    const thumbs = {};
+
+    function tipHtml(p) {
+        const img = thumbs[p.id] ? `<img src="${thumbs[p.id]}"/>` : '<i>ładowanie miniatury…</i>';
+        return `<div class="thumb-tip"><b>${escapeHtml(p.name)}</b>${p.ref ? ' (ref.)' : ''}${p.device ? ' 📷 GPS z aparatu' : ''}<br/>${p.time}` +
+               (p.dir !== null && p.dir !== undefined ? ` · ↗${Math.round(p.dir)}°` : '') + img + '</div>';
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+
+    function showPhotos(d) {
+        photoLayer.clearLayers();
+        routeLayer.clearLayers();
+        for (const k in photoMarkers) delete photoMarkers[k];
+        (d.items || []).forEach(p => {
+            const m = L.circleMarker([p.lat, p.lng], {
+                radius: 6, weight: 2, bubblingMouseEvents: false,
+                color: p.ref ? '#3b6fb6' : p.device ? '#8a6100' : '#1e7d32',
+                fillColor: p.ref ? '#8fb3e6' : p.device ? '#ffc107' : '#6cc070', fillOpacity: 0.9
+            }).addTo(photoLayer);
+            m.bindTooltip(tipHtml(p), { direction: 'top', offset: [0, -6] });
+            m.on('tooltipopen', () => {
+                if (!thumbs[p.id]) send({ type: 'thumbReq', id: p.id });
+            });
+            m.on('click', () => send({ type: 'photoClick', id: p.id }));
+            photoMarkers[p.id] = { marker: m, data: p };
+        });
+        (d.route || []).forEach(seg => {
+            if (seg.length > 1)
+                L.polyline(seg, { color: '#7b2fbf', weight: 2, opacity: 0.7, dashArray: '4 4', interactive: false })
+                    .addTo(routeLayer);
+        });
+    }
+
+    function showTrack(d) {
+        trackLayer.clearLayers();
+        (d.segments || []).forEach(seg => {
+            if (seg.length > 1)
+                L.polyline(seg, { color: '#d62828', weight: 3, opacity: 0.55, interactive: false }).addTo(trackLayer);
+        });
+    }
+
+    function setThumb(id, data) {
+        thumbs[id] = data;
+        const pm = photoMarkers[id];
+        if (pm) pm.marker.setTooltipContent(tipHtml(pm.data));
+    }
+
+    // --- wyszukiwanie ---
+    function parseCoords(q) {
+        q = q.trim();
+        let m;
+        // Google Maps: !3dLAT!4dLNG (dokładna pinezka), @LAT,LNG, q=/ll=/query=LAT,LNG
+        if ((m = q.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/))) return [+m[1], +m[2]];
+        if ((m = q.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/))) return [+m[1], +m[2]];
+        if ((m = q.match(/[?&](?:q|ll|query|center|viewpoint)=(-?\d+(?:\.\d+)?)(?:,|%2C)\s*(-?\d+(?:\.\d+)?)/i))) return [+m[1], +m[2]];
+        // OSM: #map=Z/LAT/LNG lub mlat=..&mlon=..
+        if ((m = q.match(/#map=\d+\/(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)/))) return [+m[1], +m[2]];
+        if ((m = q.match(/mlat=(-?\d+(?:\.\d+)?).*mlon=(-?\d+(?:\.\d+)?)/))) return [+m[1], +m[2]];
+        // geo:LAT,LNG
+        if ((m = q.match(/^geo:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/i))) return [+m[1], +m[2]];
+        // stopnie/minuty/sekundy z literami N/S/E/W
+        const dms = /(\d+(?:[.,]\d+)?)\s*°\s*(?:(\d+(?:[.,]\d+)?)\s*['′’]\s*)?(?:(\d+(?:[.,]\d+)?)\s*(?:"|″|''|”)\s*)?([NSEW])/gi;
+        const parts = [...q.matchAll(dms)];
+        if (parts.length === 2) {
+            const conv = p => {
+                const v = (+p[1].replace(',', '.')) + (+(p[2] || '0').replace(',', '.')) / 60 + (+(p[3] || '0').replace(',', '.')) / 3600;
+                return /[SW]/i.test(p[4]) ? -v : v;
+            };
+            const a = conv(parts[0]), b = conv(parts[1]);
+            return /[EW]/i.test(parts[0][4]) ? [b, a] : [a, b];
+        }
+        // dziesiętnie: "50.06, 19.94", "50.06 19.94", "50.06°, 19.94°"
+        if ((m = q.match(/^(-?\d{1,2}(?:\.\d+)?)\s*°?\s*[,; ]\s*(-?\d{1,3}(?:\.\d+)?)\s*°?$/))) return [+m[1], +m[2]];
+        return null;
+    }
+
+    async function search(text) {
+        const q = (text !== undefined ? text : document.getElementById('q').value).trim();
         if (!q) return;
+        const c = parseCoords(q);
+        if (c && Math.abs(c[0]) <= 90 && Math.abs(c[1]) <= 180) {
+            estLayer.clearLayers();
+            map.setView(c, Math.max(map.getZoom(), 16));
+            setMarker(c[0], c[1]);
+            return;
+        }
         updateCoords('Szukam: ' + q + '…');
 
         let hit = await geocode(q);
@@ -113,7 +264,7 @@
     }
 
     function updateCoords(text) {
-        document.getElementById('coords').textContent = text;
+        document.getElementById('coordText').textContent = text;
     }
 
     async function geocode(q) {
@@ -127,6 +278,36 @@
             if (j && j.length > 0) return { lat: +j[0].lat, lon: +j[0].lon };
         } catch (err) { }
         return null;
+    }
+
+    // Adres punktu (Nominatim reverse, max ~1 zapytanie/s).
+    let reverseTimer = null;
+    let lastReverse = 0;
+    const reverseCache = {};
+    function scheduleReverse(lat, lng) {
+        clearTimeout(reverseTimer);
+        const key = lat.toFixed(4) + ',' + lng.toFixed(4);
+        if (reverseCache[key]) { showAddress(reverseCache[key]); return; }
+        document.getElementById('address').textContent = '…';
+        const wait = Math.max(700, 1100 - (Date.now() - lastReverse));
+        reverseTimer = setTimeout(async () => {
+            lastReverse = Date.now();
+            try {
+                const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=18&lat=${lat}&lon=${lng}`, {
+                    headers: { 'Accept-Language': 'pl' }
+                });
+                const j = await r.json();
+                const text = j && j.display_name ? j.display_name : '';
+                reverseCache[key] = text;
+                showAddress(text);
+            } catch (err) {
+                showAddress('');
+            }
+        }, wait);
+    }
+    function showAddress(text) {
+        document.getElementById('address').textContent = text;
+        send({ type: 'address', text });
     }
 
     async function searchStreets(q) {
@@ -156,23 +337,34 @@
 
     function openStreetView() {
         const ll = marker ? marker.getLatLng() : map.getCenter();
-        if (window.chrome && window.chrome.webview) {
-            window.chrome.webview.postMessage({
-                type: 'streetview',
-                lat: ll.lat, lng: ll.lng
-            });
-        }
+        send({ type: 'streetview', lat: ll.lat, lng: ll.lng, heading: direction });
     }
 
     document.getElementById('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
 
-    if (window.chrome && window.chrome.webview) {
+    // Skróty klawiszowe działają też, gdy fokus jest na mapie.
+    document.addEventListener('keydown', e => {
+        if (e.target && e.target.tagName === 'INPUT') return;
+        const keys = ['Enter', 'n', 'N', 'p', 'P', 'g', 'G', 's', 'S', 'z', 'Z', 'c', 'C', 'v', 'V', 'Escape', 'ArrowUp', 'ArrowDown'];
+        if (!keys.includes(e.key)) return;
+        e.preventDefault();
+        send({ type: 'key', key: e.key, shift: e.shiftKey, ctrl: e.ctrlKey });
+    });
+
+    if (hasHost) {
         window.chrome.webview.addEventListener('message', e => {
             const d = e.data;
-            if (d && d.type === 'setView') setView(d.lat, d.lng, d.zoom);
-            else if (d && d.type === 'estimate')
-                showEstimate(d.lat, d.lng, d.aLat, d.aLng, d.bLat, d.bLng, d.zoom);
+            if (!d) return;
+            if (d.type === 'setView') setView(d.lat, d.lng, d.zoom, d.dir);
+            else if (d.type === 'estimate') showEstimate(d);
+            else if (d.type === 'photos') showPhotos(d);
+            else if (d.type === 'track') showTrack(d);
+            else if (d.type === 'thumb') setThumb(d.id, d.data);
+            else if (d.type === 'search') { document.getElementById('q').value = d.q; search(d.q); }
+            else if (d.type === 'direction') setDirection(d.deg, false);
+            else if (d.type === 'fit' && d.points && d.points.length) map.fitBounds(L.latLngBounds(d.points).pad(0.1));
         });
+        send({ type: 'ready' });
     }
 </script>
 </body>

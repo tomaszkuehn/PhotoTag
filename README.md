@@ -12,16 +12,40 @@ Aplikacja desktopowa (WPF, .NET 8) do szybkiego uzupełniania współrzędnych G
   - **wyszukiwanie ulic** (Overpass API) — jeśli geokoder nie rozpozna frazy, rysowane są niebieskie linie odcinków ulic o pasującej nazwie w widocznym obszarze (do 50),
   - przełącznik warstw: mapa OSM / **satelita** (Esri World Imagery),
   - **Street View** (przycisk „Street View” na pasku mapy) — osadzony panel zastępujący mapę; powrót przyciskiem „← Mapa" lub `Esc`.
-- Sugestia lokalizacji: przy wyborze zdjęcia bez GPS mapa podąża za najbliższym zdjęciem z GPS (Δ≤5 min → zoom 15, ≤60 min → zoom 13, ≤12 h → zoom 6, dalej brak podglądu).
+  - pole wyszukiwania rozpoznaje też współrzędne: `50.06, 19.94`, `50°03'41"N 19°56'12"E`, linki Google Maps (`@lat,lng`, `!3d…!4d…`, `?q=`), OSM (`#map=`), `geo:`,
+  - **adres punktu** (reverse geocoding Nominatim) pod mapą i pod przyciskami,
+  - **kierunek zdjęcia**: prawy klik = kierunek, w którym patrzył aparat (stożek); zapisywany jako `GPSImgDirection` (północ geograficzna), Street View otwiera się w tym kierunku; „Kierunek ✕” usuwa.
+- **Ślad GPS** („Ślad GPS: Wczytaj…”): GPX, KML (`gx:Track`, Placemark z czasem), JSON z historii lokalizacji Google (`Records.json`, `Timeline.json` z telefonu, Semantic Location History). Pozycja = interpolacja między punktami śladu (luka ≤ 2 h) lub najbliższy punkt (≤ 10 min). Ślad rysowany na mapie (czerwona linia); wczytane pliki są pamiętane.
+- **Korekta zegara aparatu** („Zegar aparatu”): przesunięcie per aparat (EXIF `Make`/`Model`), np. `+01:00:00`. Uwzględniana strefa `OffsetTimeOriginal`, a bez niej strefa systemowa. „Kalibruj”:
+  - 2 zaznaczone zdjęcia tej samej sceny z różnych aparatów → zrównanie czasu (korygowany aparat zdjęcia bez GPS),
+  - 1 zdjęcie + punkt na mapie, gdzie je zrobiono → czas najbliższego punktu śladu GPS.
+- **Źródło GPS**: zdjęcia z pozycją zapisaną przez aparat/telefon w chwili zrobienia (są znaczniki `GPSTimeStamp`/`GPSDateStamp`/`GPSAltitude`/`GPSProcessingMethod` itp.) oznaczone „📷 GPS z aparatu” i złotym kolorem na liście i mapie; pozycje dopisane przez PhotoTag (`GPSProcessingMethod = MANUAL` lub plik `_LOCPT`) — „GPS dodany”; same współrzędne bez innych znaczników — „GPS” (źródło nieznane).
+- **Zdjęcia z GPS na mapie**: zielone (złote = GPS z aparatu) punkty (miniatura po najechaniu, klik = wybór zdjęcia) i fioletowa trasa w kolejności czasu; warstwy w przełączniku mapy.
+- **Foldery referencyjne** (np. zdjęcia z telefonu, z podfolderami): ich zdjęcia z GPS służą tylko jako źródło podpowiedzi i interpolacji (niebieskie punkty), nie trafiają na listę.
+- Sugestia lokalizacji przy wyborze zdjęcia bez GPS: ślad GPS → interpolacja między zdjęciami z GPS (Δ ≤ 2 h, także z folderów ref.) → najbliższe zdjęcie z GPS (Δ≤5 min → zoom 15, ≤60 min → zoom 13, ≤12 h → zoom 6).
+- **Sesje**: lista grupowana po przerwie w czasie (domyślnie 30 min); „zaznacz” w nagłówku lub `G` zaznacza całą sesję. Wiele zdjęć: Ctrl/Shift + klik.
+- **Miejsca**: ulubione (★ Zapisz) i ostatnio użyte (automatycznie po zapisie); kopiuj/wklej punkt (Ctrl+C / Ctrl+V — współrzędne, link Google Maps/OSM lub adres).
 - Zapis GPS:
-  - zapis tylko współrzędnych (piksele bez zmian), orientacja EXIF zachowana,
+  - zapis tylko współrzędnych (+ kierunku i znacznika `GPSProcessingMethod = MANUAL`; piksele bez zmian), orientacja EXIF zachowana,
   - nazwa: `foto.jpg` → `foto_LOCPT.jpg`; edycja już oznaczonego pliku `_LOCPT` nadpisuje go po potwierdzeniu,
   - przy istniejącym `foto_LOCPT.jpg` — pytanie o nadpisaniu,
   - zapis przez plik tymczasowy `.tmp` + przeniesienie (atomowościowo bezpieczne),
-  - tryb zbiorczy (checkbox) dla wszystkich zdjęć bez GPS w folderze,
+  - zapis do wszystkich zaznaczonych zdjęć albo (checkbox) wszystkich bez GPS,
+  - „Uzupełnij automatycznie” — wszystkie zdjęcia bez GPS ze śladu GPS lub interpolacji,
+  - **Cofnij** (Ctrl+Z) — przywraca stan sprzed ostatnich zapisów (kopie w `%TEMP%\PhotoTag\undo`, czyszczone przy starcie),
   - po zapisie automatycznie zaznaczane jest kolejne zdjęcie bez GPS.
+- Skróty (działają też przy fokusie na mapie): `Enter` zapis, `N` / `Shift+N` następne/poprzednie bez GPS, `G` sesja, `S` Street View, `Ctrl+C`/`Ctrl+V`, `Ctrl+Z`, `Esc`.
+- Ustawienia (ostatni folder, ślady, foldery ref., zegary, miejsca): `%APPDATA%\PhotoTag\settings.json`.
 
 ## Uruchomienie
+
+Gotowy plik exe (self-contained, bez instalacji .NET; wymaga WebView2 Runtime):
+
+```powershell
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o bin/publish
+```
+
+Folder `Assets` musi leżeć obok `PhotoTag.exe`. Uruchomienie ze źródeł:
 
 ```powershell
 dotnet run
@@ -31,8 +55,10 @@ Wymaga .NET SDK 8 oraz połączenia z internetem (kafelki mapy, Nominatim, Overp
 
 ## Architektura
 
-- `Models/PhotoItem.cs` — model zdjęcia (INPC): status GPS, daty, miniaturka.
-- `Services/ExifService.cs` — odczyt/zapis EXIF (`ExifLibNet`): `GeoPoint`, `ReadInfo`, `WriteGps`, konwersja stopnie–DMS (clamp ujemnych sekund).
+- `Models/PhotoItem.cs` — model zdjęcia (INPC): status i źródło GPS, czas po korekcie zegara (lokalny/UTC), sesja, miniaturka.
+- `Services/ExifService.cs` — odczyt/zapis EXIF (`ExifLibNet`): `GeoPoint`, `ReadInfo` (GPS i jego źródło, kierunek, data, strefa, aparat), `WriteGps` (z markerem `GPSProcessingMethod = MANUAL`), konwersja stopnie–DMS (clamp ujemnych sekund).
+- `Services/TrackStore.cs` — ślady GPS (GPX/KML/JSON Google), wyszukiwanie pozycji po czasie UTC.
+- `Services/SettingsService.cs` — trwałe ustawienia (JSON w `%APPDATA%`).
 - `Services/Imaging.cs` — dekodowanie miniatur/podglądów z uwzględnieniem orientacji EXIF.
 - `Assets/map.html` — mapa: warstwy, wyszukiwanie, komunikacja z WPF przez `window.chrome.webview.postMessage` / `setView(lat,lng,zoom)`.
 - `MainWindow.xaml(.cs)` — UI, sugerowanie punktów, zapis zbiorczy, zarządzanie trybami ( mapa / Street View / powiększenie). WebView2 jest natywnym HWND i wypada NAD elementami WPF — nakładki wymagają zwijania panelu mapy (`MapView.Visibility`).
