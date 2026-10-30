@@ -75,12 +75,6 @@
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                      MouseDoubleClick="PhotoList_MouseDoubleCick">
-                <ListBox.Resources>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
-                                     Color="#0078D7"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}"
-                                     Color="White"/>
-                </ListBox.Resources>
                 <ListBox.GroupStyle>
                     <GroupStyle>
                         <GroupStyle.HeaderTemplate>
@@ -99,11 +93,27 @@
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
                         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                        <Style.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="BorderBrush" Value="#0078D7"/>
-                            </Trigger>
-                        </Style.Triggers>
+                        <!-- Własny szablon: domyślny (Aero2) prawie ukrywa zaznaczenie, gdy fokus jest na mapie. -->
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent"
+                                            BorderThickness="2" CornerRadius="5" Padding="2,0"
+                                            SnapsToDevicePixels="True">
+                                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="#EAF3FC"/>
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="#CCE4F7"/>
+                                            <Setter TargetName="Bd" Property="BorderBrush" Value="#0078D7"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
                     </Style>
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
