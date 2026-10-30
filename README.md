@@ -23,7 +23,7 @@ Aplikacja desktopowa (WPF, .NET 8) do szybkiego uzupełniania współrzędnych G
 - **Zdjęcia z GPS na mapie**: zielone (złote = GPS z aparatu) punkty (miniatura po najechaniu, klik = wybór zdjęcia) i fioletowa trasa w kolejności czasu; warstwy w przełączniku mapy.
 - **Foldery referencyjne** (np. zdjęcia z telefonu, z podfolderami): ich zdjęcia z GPS służą tylko jako źródło podpowiedzi i interpolacji (niebieskie punkty), nie trafiają na listę.
 - Sugestia lokalizacji przy wyborze zdjęcia bez GPS: ślad GPS → interpolacja między zdjęciami z GPS (Δ ≤ 2 h, także z folderów ref.) → najbliższe zdjęcie z GPS (Δ ≤ 12 h). Wybór zdjęcia (z listy lub klik punktu na mapie) tylko przesuwa mapę — powiększenie pozostaje takie, jak ustawił użytkownik.
-- **Przesuwanie na osi czasu** (zdjęcia ze złą datą): przeciągnij zdjęcie (lub zaznaczoną grupę) na liście w odpowiednie miejsce — dostaje czas o 1 s przed/po zdjęciu, na które upuszczono (gdy brak miejsca — równomiernie między sąsiadami); `Alt+↑`/`Alt+↓` przesuwa o jedną pozycję; prawy klik → „Ustaw datę i godzinę…” (grupa zachowuje odstępy) / „Przywróć datę z EXIF”. Czas ręczny (oznaczony „ręcznie”) zastępuje datę EXIF i korektę zegara przy sortowaniu, sesjach, śladzie GPS i interpolacji; jest pamiętany w ustawieniach (także dla pliku `_LOCPT`), pliku nie zmienia.
+- **Przesuwanie na osi czasu** (zdjęcia ze złą datą): przycisk „Ułóż kolejność…” (lub prawy klik na liście) otwiera osobny widok z dużymi miniaturami (3× większymi, bez dat i lokalizacji), ułożonymi wierszami w kolejności czasu. Przeciągnij dowolne zdjęcie na inne — lewa/prawa połowa kafelka decyduje, czy trafi przed, czy po nim; dostaje czas o 1 s przed/po tym zdjęciu (gdy brak miejsca — równomiernie między sąsiadami). „Cofnij” (Ctrl+Z) cofa 4 ostatnie przesunięcia. Na liście głównej: `Alt+↑`/`Alt+↓` przesuwa o jedną pozycję; prawy klik → „Ustaw datę i godzinę…” (grupa zachowuje odstępy) / „Przywróć datę z EXIF”. Czas ręczny (oznaczony „ręcznie”) zastępuje datę EXIF i korektę zegara przy sortowaniu, sesjach, śladzie GPS i interpolacji; jest pamiętany w ustawieniach (także dla pliku `_LOCPT`), pliku nie zmienia.
 - **Sesje**: lista grupowana po przerwie w czasie (domyślnie 30 min); „zaznacz” w nagłówku lub `G` zaznacza całą sesję. Wiele zdjęć: Ctrl/Shift + klik.
 - **Miejsca**: ulubione (★ Zapisz) i ostatnio użyte (automatycznie po zapisie); kopiuj/wklej punkt (Ctrl+C / Ctrl+V — współrzędne, link Google Maps/OSM lub adres).
 - Zapis GPS:
@@ -62,7 +62,8 @@ Wymaga .NET SDK 8 oraz połączenia z internetem (kafelki mapy, Nominatim, Overp
 - `Services/SettingsService.cs` — trwałe ustawienia (JSON w `%APPDATA%`).
 - `Services/Imaging.cs` — dekodowanie miniatur/podglądów z uwzględnieniem orientacji EXIF.
 - `Assets/map.html` — mapa: warstwy, wyszukiwanie, komunikacja z WPF przez `window.chrome.webview.postMessage` / `setView(lat,lng,zoom)`.
-- `MainWindow.Timeline.cs` — ręczny czas zdjęć: przeciąganie na liście (adorner linii wstawienia), `Alt+↑/↓`, menu kontekstowe.
+- `MainWindow.Timeline.cs` — ręczny czas zdjęć: wstawianie na osi czasu, cofanie (4 kroki), `Alt+↑/↓`, menu kontekstowe.
+- `OrderWindow.xaml(.cs)` — widok „Ułóż kolejność”: siatka dużych miniatur, przeciąganie z linią wstawienia, cofanie.
 - `MainWindow.xaml(.cs)` — UI, sugerowanie punktów, zapis zbiorczy, zarządzanie trybami ( mapa / Street View / powiększenie). WebView2 jest natywnym HWND i wypada NAD elementami WPF — nakładki wymagają zwijania panelu mapy (`MapView.Visibility`).
 
 ## Ograniczenia

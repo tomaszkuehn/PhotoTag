@@ -23,6 +23,8 @@
                 <TextBox x:Name="FolderBox" Width="360" IsReadOnly="True" VerticalContentAlignment="Center" Margin="0,3"/>
                 <Button x:Name="PickFolderBtn" Content="Wybierz folder…" Click="PickFolderBtn_Click"/>
                 <Button x:Name="RefreshBtn" Content="Odśwież" Click="RefreshBtn_Click"/>
+                <Button Content="Ułóż kolejność…" Click="OrderBtn_Click"
+                        ToolTip="Osobny widok dużych miniatur: przeciągnij zdjęcie ze złą datą we właściwe miejsce na osi czasu"/>
                 <TextBlock x:Name="CountText" Margin="12,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
 
                 <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="10,4"/>
@@ -74,20 +76,15 @@
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.IsVirtualizingWhenGrouping="True"
-                     MouseDoubleClick="PhotoList_MouseDoubleCick"
-                     AllowDrop="True"
-                     PreviewMouseLeftButtonDown="PhotoList_PreviewMouseLeftButtonDown"
-                     PreviewMouseMove="PhotoList_PreviewMouseMove"
-                     PreviewMouseLeftButtonUp="PhotoList_PreviewMouseLeftButtonUp"
-                     DragOver="PhotoList_DragOver"
-                     DragLeave="PhotoList_DragLeave"
-                     Drop="PhotoList_Drop">
+                     MouseDoubleClick="PhotoList_MouseDoubleCick">
                 <ListBox.ContextMenu>
                     <ContextMenu>
+                        <MenuItem Header="Ułóż kolejność zdjęć…" Click="OrderBtn_Click" FontWeight="SemiBold"/>
                         <MenuItem Header="Ustaw datę i godzinę…" Click="SetTimeMenu_Click"/>
                         <MenuItem Header="Przesuń wcześniej (Alt+↑)" Click="MoveEarlierMenu_Click"/>
                         <MenuItem Header="Przesuń później (Alt+↓)" Click="MoveLaterMenu_Click"/>
                         <Separator/>
+                        <MenuItem Header="Cofnij ostatnią zmianę czasu" Click="UndoTimeMenu_Click"/>
                         <MenuItem Header="Przywróć datę z EXIF" Click="ResetTimeMenu_Click"/>
                     </ContextMenu>
                 </ListBox.ContextMenu>
@@ -209,7 +206,7 @@
                                    Foreground="#555" TextTrimming="CharacterEllipsis" MaxWidth="520"/>
                     </WrapPanel>
                     <TextBlock Foreground="#888" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Text="Mapa: klik = punkt, przeciągnij = korekta, prawy klik = kierunek zdjęcia. Skróty: Enter zapis · N / Shift+N następne/poprzednie bez GPS · G zaznacz sesję · S Street View · Ctrl+C/V kopiuj/wklej punkt · Ctrl+Z cofnij · Lista: przeciągnij zdjęcie lub Alt+↑/↓ = przesuń na osi czasu (zła data)"/>
+                               Text="Mapa: klik = punkt, przeciągnij = korekta, prawy klik = kierunek zdjęcia. Skróty: Enter zapis · N / Shift+N następne/poprzednie bez GPS · G zaznacz sesję · S Street View · Ctrl+C/V kopiuj/wklej punkt · Ctrl+Z cofnij · Zła data: „Ułóż kolejność…” lub Alt+↑/↓"/>
                 </StackPanel>
 
                 <Border Grid.Row="2" CornerRadius="4" BorderBrush="#CCC" BorderThickness="1">

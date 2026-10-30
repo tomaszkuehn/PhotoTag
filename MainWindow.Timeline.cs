@@ -1,24 +1,21 @@
 using System.Globalization;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
 using PhotoTag.Models;
 using PhotoTag.Services;
 
 namespace PhotoTag;
 
-/// <summary>Ręczne ustawianie czasu zdjęć: przeciąganie na liście, Alt+↑/↓, menu kontekstowe.</summary>
+/// <summary>Ręczne ustawianie czasu zdjęć: okno „Ułóż kolejność”, Alt+↑/↓, menu kontekstowe, cofanie.</summary>
 public partial class MainWindow
 {
-    private const string DragFormat = "PhotoTag.Items";
     private static readonly TimeSpan PlacementStep = TimeSpan.FromSeconds(1);
+    private const int TimeUndoLimit = 4;
 
-    private Point _dragStart;
-    private PhotoItem? _dragItem;
-    private bool _dragKeepsSelection;
-    private InsertionAdorner? _insertion;
+    /// <summary>Stan sprzed ostatnich zmian czasu: ścieżka → poprzedni ręczny czas (null = brak).</summary>
+    private readonly LinkedList<Dictionary<string, DateTime?>> _timeUndo = new();
+
+    internal IReadOnlyList<PhotoItem> Photos => _items;
+    internal int TimeUndoCount => _timeUndo.Count;
 
     // ---------------------------------------------------------------- umieszczanie na osi czasu
 
@@ -26,37 +23,35 @@ public partial class MainWindow
     /// Ustawia ręczny czas zdjęć <paramref name="moving"/> tuż przed/po <paramref name="anchor"/>
     /// (krok 1 s; gdy brak miejsca do sąsiedniego zdjęcia — równomiernie pomiędzy).
     /// </summary>
-    private void PlaceInTimeline(List<PhotoItem> moving, PhotoItem anchor, bool after)
+    internal bool PlaceInTimeline(List<PhotoItem> moving, PhotoItem anchor, bool after)
     {
         if (!anchor.HasValidDate)
         {
             StatusText.Text = "Nie można wstawić obok zdjęcia bez daty.";
-            return;
+            return false;
         }
 
         var others = _items.Where(i => !moving.Contains(i) && i.HasValidDate).ToList();
         var idx = others.IndexOf(anchor);
-        if (idx < 0) return;
+        if (idx < 0) return false;
         var k = moving.Count;
 
         DateTime lo, hi;
-        DateTime? bound;
         if (after)
         {
             lo = anchor.TimeUtc;
-            bound = idx + 1 < others.Count ? others[idx + 1].TimeUtc : null;
             hi = lo + PlacementStep * (k + 1);
-            if (bound is { } b && hi > b) hi = b;
+            if (idx + 1 < others.Count && others[idx + 1].TimeUtc < hi) hi = others[idx + 1].TimeUtc;
         }
         else
         {
             hi = anchor.TimeUtc;
-            bound = idx > 0 ? others[idx - 1].TimeUtc : null;
             lo = hi - PlacementStep * (k + 1);
-            if (bound is { } b && lo < b) lo = b;
+            if (idx > 0 && others[idx - 1].TimeUtc > lo) lo = others[idx - 1].TimeUtc;
         }
         var step = (hi - lo) / (k + 1);
 
+        PushTimeUndo(moving);
         for (int j = 0; j < k; j++)
         {
             var item = moving[j];
@@ -67,7 +62,8 @@ public partial class MainWindow
         AfterTimeChange(moving);
         StatusText.Text = (k == 1 ? $"{moving[0].FileName}: " : $"Przesunięto {k} zdjęć: ") +
                           $"czas ustawiony na {moving[0].Time:yyyy-MM-dd HH:mm:ss} " +
-                          $"({(after ? "po" : "przed")} {anchor.FileName}). Przywrócenie: prawy klik → „Przywróć datę z EXIF”.";
+                          $"({(after ? "po" : "przed")} {anchor.FileName}).";
+        return true;
     }
 
     /// <summary>Alt+↑/↓: przesuwa zaznaczone zdjęcia o jedną pozycję na liście.</summary>
@@ -123,7 +119,53 @@ public partial class MainWindow
         SendTrackToMap();
     }
 
-    // ---------------------------------------------------------------- menu kontekstowe
+    // ---------------------------------------------------------------- cofanie (ostatnie 4 zmiany)
+
+    private void PushTimeUndo(IEnumerable<PhotoItem> items)
+    {
+        _timeUndo.AddFirst(items.ToDictionary(i => i.Path, i => i.TimeOverride, StringComparer.OrdinalIgnoreCase));
+        while (_timeUndo.Count > TimeUndoLimit)
+            _timeUndo.RemoveLast();
+    }
+
+    /// <summary>Cofa ostatnią zmianę czasu (przesunięcie, ustawienie, przywrócenie daty).</summary>
+    internal bool UndoTimeMove()
+    {
+        if (_timeUndo.First is not { } node) return false;
+        _timeUndo.RemoveFirst();
+
+        var changed = new List<PhotoItem>();
+        foreach (var (path, previous) in node.Value)
+        {
+            if (_items.FirstOrDefault(i => string.Equals(i.Path, path, StringComparison.OrdinalIgnoreCase)) is { } item)
+            {
+                SetTimeOverride(item, previous);
+                changed.Add(item);
+            }
+            else if (previous is { } t)
+                _settings.TimeOverrides[path] = t;
+            else
+                _settings.TimeOverrides.Remove(path);
+        }
+        SettingsService.Save(_settings);
+
+        if (changed.Count > 0)
+            AfterTimeChange(changed.OrderBy(i => _items.IndexOf(i)).ToList());
+        StatusText.Text = $"Cofnięto zmianę czasu {node.Value.Count} zdjęć (pozostało cofnięć: {_timeUndo.Count}).";
+        return true;
+    }
+
+    // ---------------------------------------------------------------- okno i menu kontekstowe
+
+    private void OrderBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_items.Count == 0)
+        {
+            ShowInfo("Najpierw wybierz folder ze zdjęciami.");
+            return;
+        }
+        new OrderWindow(this, _current) { Owner = this }.ShowDialog();
+    }
 
     private void SetTimeMenu_Click(object sender, RoutedEventArgs e)
     {
@@ -143,6 +185,7 @@ public partial class MainWindow
             return;
         }
 
+        PushTimeUndo(sel);
         var delta = time - initial;
         for (int n = 0; n < sel.Count; n++)
         {
@@ -158,6 +201,12 @@ public partial class MainWindow
 
     private void MoveLaterMenu_Click(object sender, RoutedEventArgs e) => MoveInTimeline(true);
 
+    private void UndoTimeMenu_Click(object sender, RoutedEventArgs e)
+    {
+        if (!UndoTimeMove())
+            StatusText.Text = "Brak zmian czasu do cofnięcia.";
+    }
+
     private void ResetTimeMenu_Click(object sender, RoutedEventArgs e)
     {
         var sel = SelectedPhotos().Where(i => i.TimeOverride is not null).ToList();
@@ -166,6 +215,7 @@ public partial class MainWindow
             StatusText.Text = "Zaznaczone zdjęcia nie mają ręcznie ustawionego czasu.";
             return;
         }
+        PushTimeUndo(sel);
         foreach (var item in sel)
             SetTimeOverride(item, null);
         SettingsService.Save(_settings);
@@ -184,172 +234,5 @@ public partial class MainWindow
             return true;
         }
         return false;
-    }
-
-    // ---------------------------------------------------------------- przeciąganie na liście
-
-    private void PhotoList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        _dragItem = null;
-        _dragKeepsSelection = false;
-        var container = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
-        if (container?.DataContext is not PhotoItem item) return;
-
-        _dragStart = e.GetPosition(PhotoList);
-        _dragItem = item;
-        // klik bez modyfikatorów w zaznaczoną grupę skasowałby zaznaczenie — przeciąga się całą grupę
-        if (container.IsSelected && PhotoList.SelectedItems.Count > 1 && Keyboard.Modifiers == ModifierKeys.None)
-        {
-            _dragKeepsSelection = true;
-            e.Handled = true;
-        }
-    }
-
-    private void PhotoList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        if (_dragKeepsSelection && _dragItem is not null)
-            MaintainSelection(_dragItem);
-        _dragItem = null;
-        _dragKeepsSelection = false;
-    }
-
-    private void PhotoList_PreviewMouseMove(object sender, MouseEventArgs e)
-    {
-        if (_dragItem is null || e.LeftButton != MouseButtonState.Pressed) return;
-        var d = e.GetPosition(PhotoList) - _dragStart;
-        if (Math.Abs(d.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(d.Y) < SystemParameters.MinimumVerticalDragDistance)
-            return;
-
-        var moving = PhotoList.SelectedItems.Contains(_dragItem) ? SelectedPhotos() : new List<PhotoItem> { _dragItem };
-        _dragItem = null;
-        _dragKeepsSelection = false;
-        try
-        {
-            DragDrop.DoDragDrop(PhotoList, new DataObject(DragFormat, moving), DragDropEffects.Move);
-        }
-        finally
-        {
-            RemoveInsertion();
-        }
-    }
-
-    private void PhotoList_DragOver(object sender, DragEventArgs e)
-    {
-        AutoScroll(e.GetPosition(PhotoList).Y);
-        var target = DropTarget(e);
-        if (target is null)
-        {
-            e.Effects = DragDropEffects.None;
-            RemoveInsertion();
-        }
-        else
-        {
-            e.Effects = DragDropEffects.Move;
-            ShowInsertion(target.Value.Container, target.Value.After);
-        }
-        e.Handled = true;
-    }
-
-    private void PhotoList_DragLeave(object sender, DragEventArgs e) => RemoveInsertion();
-
-    private void PhotoList_Drop(object sender, DragEventArgs e)
-    {
-        RemoveInsertion();
-        if (DropTarget(e) is not { } target) return;
-        var moving = (List<PhotoItem>)e.Data.GetData(DragFormat)!;
-        PlaceInTimeline(moving, (PhotoItem)target.Container.DataContext, target.After);
-        e.Handled = true;
-    }
-
-    /// <summary>Element, przed/po którym wstawić; null, gdy upuszczenie niemożliwe.</summary>
-    private (ListBoxItem Container, bool After)? DropTarget(DragEventArgs e)
-    {
-        if (e.Data.GetData(DragFormat) is not List<PhotoItem> moving) return null;
-        var container = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
-        if (container?.DataContext is not PhotoItem anchor || moving.Contains(anchor) || !anchor.HasValidDate)
-            return null;
-        var after = e.GetPosition(container).Y > container.ActualHeight / 2;
-        return (container, after);
-    }
-
-    private void AutoScroll(double y)
-    {
-        if (FindDescendant<ScrollViewer>(PhotoList) is not { } sv) return;
-        const double edge = 30;
-        if (y < edge) sv.LineUp();
-        else if (y > PhotoList.ActualHeight - edge) sv.LineDown();
-    }
-
-    private void ShowInsertion(UIElement container, bool after)
-    {
-        if (_insertion is not null && ReferenceEquals(_insertion.AdornedElement, container))
-        {
-            _insertion.After = after;
-            return;
-        }
-        RemoveInsertion();
-        if (AdornerLayer.GetAdornerLayer(container) is not { } layer) return;
-        _insertion = new InsertionAdorner(container) { After = after };
-        layer.Add(_insertion);
-    }
-
-    private void RemoveInsertion()
-    {
-        if (_insertion is null) return;
-        AdornerLayer.GetAdornerLayer(_insertion.AdornedElement)?.Remove(_insertion);
-        _insertion = null;
-    }
-
-    private static T? FindAncestor<T>(DependencyObject? d) where T : DependencyObject
-    {
-        while (d is not null and not T)
-            d = d is Visual ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d);
-        return d as T;
-    }
-
-    private static T? FindDescendant<T>(DependencyObject d) where T : DependencyObject
-    {
-        for (int n = 0; n < VisualTreeHelper.GetChildrenCount(d); n++)
-        {
-            var child = VisualTreeHelper.GetChild(d, n);
-            if (child is T t) return t;
-            if (FindDescendant<T>(child) is { } found) return found;
-        }
-        return null;
-    }
-
-    /// <summary>Linia wskazująca miejsce wstawienia (nad lub pod elementem listy).</summary>
-    private sealed class InsertionAdorner : Adorner
-    {
-        private static readonly Pen LinePen = CreatePen();
-        private bool _after;
-
-        public InsertionAdorner(UIElement adorned) : base(adorned) => IsHitTestVisible = false;
-
-        public bool After
-        {
-            get => _after;
-            set
-            {
-                if (_after == value) return;
-                _after = value;
-                InvalidateVisual();
-            }
-        }
-
-        protected override void OnRender(DrawingContext dc)
-        {
-            var size = AdornedElement.RenderSize;
-            var y = _after ? size.Height - 1 : 1;
-            dc.DrawLine(LinePen, new Point(4, y), new Point(size.Width - 4, y));
-        }
-
-        private static Pen CreatePen()
-        {
-            var pen = new Pen(new SolidColorBrush(Color.FromRgb(0xD6, 0x33, 0x6C)), 3);
-            pen.Freeze();
-            return pen;
-        }
     }
 }
