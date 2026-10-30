@@ -1,0 +1,103 @@
+<Window x:Class="PhotoTag.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="PhotoTag — geotagowanie zdjęć"
+        Width="1500" Height="900" MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Border Grid.Row="0" Padding="8" Background="#F1F1F1" BorderBrush="#DDD" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Folder:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <TextBox x:Name="FolderBox" Width="480" IsReadOnly="True" VerticalContentAlignment="Center"/>
+                <Button x:Name="PickFolderBtn" Content="Wybierz folder…" Margin="6,0,0,0" Padding="10,5" Click="PickFolderBtn_Click"/>
+                <Button x:Name="RefreshBtn" Content="Odśwież" Margin="6,0,0,0" Padding="10,5" Click="RefreshBtn_Click"/>
+                <TextBlock x:Name="CountText" Margin="18,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+            </StackPanel>
+        </Border>
+
+        <StatusBar Grid.Row="2">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Wybierz folder ze zdjęciami"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="330"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <ListBox x:Name="PhotoList" Grid.Column="0" Margin="6"
+                     HorizontalContentAlignment="Stretch"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     MouseDoubleClick="PhotoList_MouseDoubleCick">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border BorderBrush="{Binding StatusBrush}" BorderThickness="2"
+                                CornerRadius="4" Padding="4" Margin="0,2">
+                            <StackPanel Orientation="Horizontal">
+                                <Image Width="72" Height="72" Source="{Binding Thumb}" Stretch="Uniform"/>
+                                <StackPanel Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="250">
+                                    <TextBlock Text="{Binding FileName}" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusBrush}"
+                                               FontSize="11" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{Binding DateText}" FontSize="11" Foreground="#666"
+                                               Margin="0,1,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Grid Grid.Column="1" Margin="4,6,6,6">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="2*"/>
+                </Grid.RowDefinitions>
+
+                <Border x:Name="PreviewBorder" Grid.Row="0" Background="#EBEBEB" CornerRadius="4"
+                        BorderBrush="#CCC" BorderThickness="1"
+                        Cursor="Hand" PreviewMouseDown="PreviewBorder_MouseDown"
+                        ToolTip="Klik = powiększenie nad mapą">
+                    <Image x:Name="PreviewImage" Margin="4" Stretch="Uniform"/>
+                </Border>
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6">
+                    <Button x:Name="ApplyButton" Content="Dodaj lokalizację i zapisz jako …_LOCPT"
+                            Padding="12,7" FontWeight="SemiBold" Click="ApplyButton_Click"/>
+                    <CheckBox x:Name="ApplyAllCheck" Content="wszystkie bez GPS" Margin="12,0,0,0"
+                              VerticalAlignment="Center"/>
+                    <CheckBox x:Name="DeleteOriginalCheck" Content="usuń oryginał po zapisie" Margin="12,0,0,0"
+                              VerticalAlignment="Center"/>
+                    <TextBlock Text="Mapa: klik = wybór punktu, przeciągnij znacznik = korekta; szukaj w pasku mapy"
+                               Margin="18,0,0,0" VerticalAlignment="Center" Foreground="#777"/>
+                </StackPanel>
+
+                <Border Grid.Row="2" CornerRadius="4" BorderBrush="#CCC" BorderThickness="1">
+                    <wv2:WebView2 x:Name="MapView"/>
+                </Border>
+            </Grid>
+
+            <Border x:Name="EnlargedOverlay" Grid.Column="1" Background="#111111"
+                    Visibility="Collapsed" MouseDown="EnlargedOverlay_MouseDown">
+                <Grid>
+                    <Image x:Name="EnlargedImage" Stretch="Uniform" Margin="10"/>
+                    <TextBlock Text="Kliknij lub Esc — zamknij podgląd" Foreground="#AAA"
+                               HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                               Margin="0,0,16,10" FontSize="12"/>
+                </Grid>
+            </Border>
+        </Grid>
+
+    </Grid>
+</Window>
