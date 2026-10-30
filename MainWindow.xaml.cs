@@ -17,6 +17,9 @@ public partial class MainWindow : Window
     private readonly SemaphoreSlim _thumbLock = new(4, 4);
     private GeoPoint? _pending;
     private PhotoItem? _suggestionSource;
+
+    private sealed record EstimateInfo(GeoPoint Point, PhotoItem Before, PhotoItem After);
+    private EstimateInfo? _estimate;
     private string? _folder;
 
     public MainWindow()
@@ -94,6 +97,7 @@ public partial class MainWindow : Window
 
         StatusText.Text = "Skanowanie folderu…";
         var extensions = new[] { ".jpg", ".jpeg", ".tif", ".tiff" };
+        var previousName = (PhotoList.SelectedItem as PhotoItem)?.FileName;
 
         var found = await Task.Run(() =>
             Directory.EnumerateFiles(folder)
@@ -111,6 +115,17 @@ public partial class MainWindow : Window
             .ThenBy(i => i.FileName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var locptPaths = new HashSet<string>(
+            found
+                .Where(i => System.IO.Path.GetFileNameWithoutExtension(i.Path)
+                    .EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase))
+                .Select(i => i.Path),
+            StringComparer.OrdinalIgnoreCase);
+        found.RemoveAll(i =>
+            System.IO.Path.GetFileNameWithoutExtension(i.Path)
+                .EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase) is false &&
+            locptPaths.Contains(ResolveTargetPath(i.Path)));
+
         _items.Clear();
         PreviewImage.Source = null;
         foreach (var item in found)
@@ -119,8 +134,19 @@ public partial class MainWindow : Window
             _ = LoadThumbAsync(item);
 
         UpdateCounts();
+        var restored = previousName is null
+            ? null
+            : _items.FirstOrDefault(i => string.Equals(i.FileName, previousName, StringComparison.OrdinalIgnoreCase));
+        MaintainSelection(restored);
         StatusText.Text = $"Załadowano {found.Count} zdjęć; {found.Count(i => !i.HasGps && !i.GpsError)} bez GPS. " +
                           "Wybierz zdjęcie, kliknij lokalizację na mapie, a następnie użyj przycisku zapisu.";
+    }
+
+    private void MaintainSelection(PhotoItem? item)
+    {
+        PhotoList.SelectedItem = item;
+        if (item is not null)
+            PhotoList.ScrollIntoView(item);
     }
 
     private async Task LoadThumbAsync(PhotoItem item)
@@ -153,16 +179,25 @@ public partial class MainWindow : Window
         }
         if (item.HasGps)
         {
+            _estimate = null;
             _suggestionSource = null;
             SendMapSetView(item.Gps!, 13);
         }
+        else if (GetTimeEstimate(item) is { } est)
+        {
+            _estimate = est;
+            _suggestionSource = null;
+            SendMapEstimate(est);
+        }
         else if (FindNearestTagged(item) is { } sugg)
         {
+            _estimate = null;
             _suggestionSource = sugg.Source;
             SendMapSetView(sugg.Source.Gps!, sugg.Zoom);
         }
         else
         {
+            _estimate = null;
             _suggestionSource = null;
         }
 
@@ -301,6 +336,45 @@ public partial class MainWindow : Window
     private static string FormatDelta(double minutes) =>
         minutes < 60 ? $"{minutes:0} min" : $"{minutes / 60.0:0.##} h";
 
+    private EstimateInfo? GetTimeEstimate(PhotoItem item)
+    {
+        if (!item.HasValidDate) return null;
+        PhotoItem? before = null, after = null;
+        foreach (var i in _items)
+        {
+            if (!i.HasGps || i.GpsError || !i.HasValidDate || ReferenceEquals(i, item)) continue;
+            if (i.DateTaken < item.DateTaken)
+            {
+                if (before is null || i.DateTaken > before.DateTaken) before = i;
+            }
+            else if (i.DateTaken > item.DateTaken &&
+                     (after is null || i.DateTaken < after.DateTaken)) after = i;
+        }
+        if (before is null || after is null) return null;
+        var day = item.DateTaken.Date;
+        if (before.DateTaken.Date != day || after.DateTaken.Date != day) return null;
+        var span = (after.DateTaken - before.DateTaken).TotalMinutes;
+        if (span <= 0 || span > 120) return null;
+        var f = (item.DateTaken - before.DateTaken).TotalMinutes / span;
+        return new EstimateInfo(
+            new GeoPoint(before.Gps!.Lat + (after.Gps!.Lat - before.Gps.Lat) * f,
+                         before.Gps.Lng + (after.Gps.Lng - before.Gps.Lng) * f),
+            before, after);
+    }
+
+    private void SendMapEstimate(EstimateInfo est, int zoom = 15)
+    {
+        if (MapView.CoreWebView2 is null) return;
+        var json = JsonSerializer.Serialize(new
+        {
+            type = "estimate",
+            lat = est.Point.Lat, lng = est.Point.Lng, zoom,
+            aLat = est.Before.Gps!.Lat, aLng = est.Before.Gps.Lng,
+            bLat = est.After.Gps!.Lat, bLng = est.After.Gps.Lng
+        });
+        MapView.CoreWebView2.PostWebMessageAsJson(json);
+    }
+
     private void SendMapSetView(GeoPoint point, int zoom = 13)
     {
         if (MapView.CoreWebView2 is null) return;
@@ -331,18 +405,48 @@ public partial class MainWindow : Window
 
         var point = _pending!;
         var pointText = $"{point.Lat:F6}, {point.Lng:F6}";
+        var prompt = targets.Count > 1
+            ? $"Dodać lokalizację {pointText} do {targets.Count} zdjęć?"
+            : null;
 
-        if (targets.Count > 1 &&
-            MessageBox.Show(this, $"Dodać lokalizację {pointText} do {targets.Count} zdjęć?",
-                "PhotoTag", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+        await ApplyEntriesAsync(targets.Select(t => (Item: t, Point: point)).ToList(), prompt);
+    }
+
+    private async void InterpolateButton_Click(object sender, RoutedEventArgs e)
+    {
+        var entries = _items
+            .Where(i => !i.HasGps && !i.GpsError && i.HasValidDate)
+            .Select(i => (Item: i, Est: GetTimeEstimate(i)))
+            .Where(x => x.Est is not null)
+            .Select(x => (Item: x.Item, Point: x.Est!.Point))
+            .ToList();
+
+        if (entries.Count == 0)
+        {
+            ShowInfo("Brak zdjęć do interpolacji. Potrzebne: zdjęcia bez GPS między zdjęciami z GPS, " +
+                     "tego samego dnia, łącznie Δ ≤ 2 h, z datą EXIF.");
+            return;
+        }
+
+        await ApplyEntriesAsync(entries,
+            $"Interpolować pozycje na podstawie czasu między zdjęciami z GPS\ni zapisać lokalizacje dla {entries.Count} zdjęć bez GPS?");
+    }
+
+    private async Task ApplyEntriesAsync(List<(PhotoItem Item, GeoPoint Point)> entries, string? batchPrompt)
+    {
+        if (batchPrompt is not null &&
+            MessageBox.Show(this, batchPrompt, "PhotoTag", MessageBoxButton.YesNo, MessageBoxImage.Question)
+                != MessageBoxResult.Yes)
             return;
 
         var deleteOriginal = DeleteOriginalCheck.IsChecked == true;
         var done = 0;
         var errors = new List<string>();
 
-        foreach (var target in targets)
+        foreach (var entry in entries)
         {
+            var target = entry.Item;
+            var point = entry.Point;
             try
             {
                 var targetPath = ResolveTargetPath(target.Path);
@@ -391,8 +495,11 @@ public partial class MainWindow : Window
             }
         }
 
+        var sharedPoint = entries.Select(e => e.Point).Distinct().Count() == 1
+            ? $"{entries[0].Point.Lat:F6}, {entries[0].Point.Lng:F6}"
+            : "interpolowane punkty";
         StatusText.Text = done > 0
-            ? $"Zapisano lokalizację {pointText} w {done} plikach."
+            ? $"Zapisano lokalizację {sharedPoint} w {done} plikach."
             : "Nie zapisano żadnego pliku.";
         if (errors.Count > 0)
         {
@@ -404,8 +511,7 @@ public partial class MainWindow : Window
             await LoadFolderAsync(_folder);
 
         var next = _items.FirstOrDefault(i => !i.HasGps && !i.GpsError);
-        if (next is not null)
-            PhotoList.SelectedItem = next;
+        MaintainSelection(next);
     }
 
     private static string ResolveTargetPath(string source)
@@ -443,6 +549,13 @@ public partial class MainWindow : Window
         else if (item.HasGps)
         {
             StatusText.Text = $"{item.FileName} ({item.DateText}) — ma GPS: {item.Gps!.Lat:F6}, {item.Gps.Lng:F6}{point}";
+        }
+        else if (_estimate is { } est && item.HasValidDate)
+        {
+            var span = FormatDelta((est.After.DateTaken - est.Before.DateTaken).TotalMinutes);
+            StatusText.Text = $"{item.FileName} ({item.DateText}) — brak GPS. Pozycja szacowana (interpolacja czasu): " +
+                              $"{est.Before.FileName} [{est.Before.DateTaken:HH:mm}] → {est.After.FileName} [{est.After.DateTaken:HH:mm}] " +
+                              $"(Δ {span}) — mapa ustawiona na szacowany punkt; przeciągnij znacznik, aby skorygować, i kliknij zapis.";
         }
         else if (_suggestionSource is { HasGps: true } src && src.HasValidDate && item.HasValidDate)
         {

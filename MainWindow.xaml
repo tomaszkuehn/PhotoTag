@@ -38,6 +38,22 @@
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      VirtualizingPanel.IsVirtualizing="True"
                      MouseDoubleClick="PhotoList_MouseDoubleCick">
+                <ListBox.Resources>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
+                                     Color="#0078D7"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}"
+                                     Color="White"/>
+                </ListBox.Resources>
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="BorderBrush" Value="#0078D7"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Border BorderBrush="{Binding StatusBrush}" BorderThickness="2"
@@ -75,6 +91,8 @@
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6">
                     <Button x:Name="ApplyButton" Content="Dodaj lokalizację i zapisz jako …_LOCPT"
                             Padding="12,7" FontWeight="SemiBold" Click="ApplyButton_Click"/>
+                    <Button x:Name="InterpolateButton" Content="Interpoluj (Δ≤2h)"
+                            Padding="12,7" Margin="12,0,0,0" Click="InterpolateButton_Click"/>
                     <CheckBox x:Name="ApplyAllCheck" Content="wszystkie bez GPS" Margin="12,0,0,0"
                               VerticalAlignment="Center"/>
                     <CheckBox x:Name="DeleteOriginalCheck" Content="usuń oryginał po zapisie" Margin="12,0,0,0"

@@ -40,6 +40,7 @@
 <script>
     const map = L.map('map').setView([52.0, 21.0], 6);
     const streetLayer = L.layerGroup().addTo(map);
+    const estLayer = L.layerGroup().addTo(map);
     const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '&copy; OpenStreetMap'
     });
@@ -71,7 +72,22 @@
         }
     }
 
-    map.on('click', e => setMarker(e.latlng.lat, e.latlng.lng));
+    map.on('click', e => {
+        estLayer.clearLayers();
+        setMarker(e.latlng.lat, e.latlng.lng);
+    });
+
+    function showEstimate(lat, lng, aLat, aLng, bLat, bLng, zoom) {
+        estLayer.clearLayers();
+        L.polyline([[aLat, aLng], [bLat, bLng]],
+            { color: '#e68a00', weight: 3, dashArray: '8 6', opacity: 0.85 }).addTo(estLayer);
+        L.circleMarker([lat, lng],
+            { radius: 7, color: '#e68a00', weight: 3, fillColor: '#ffb14d', fillOpacity: 0.9 })
+            .addTo(estLayer).bindTooltip('Pozycja szacowana');
+        updateCoords('Pozycja szacowana (interpolacja czasu): ' + lat.toFixed(6) + ', ' + lng.toFixed(6));
+        map.setView([lat, lng], zoom || 15);
+        setMarker(lat, lng);
+    }
 
     function setView(lat, lng, zoom) {
         map.setView([lat, lng], zoom || 13);
@@ -154,6 +170,8 @@
         window.chrome.webview.addEventListener('message', e => {
             const d = e.data;
             if (d && d.type === 'setView') setView(d.lat, d.lng, d.zoom);
+            else if (d && d.type === 'estimate')
+                showEstimate(d.lat, d.lng, d.aLat, d.aLng, d.bLat, d.bLng, d.zoom);
         });
     }
 </script>
