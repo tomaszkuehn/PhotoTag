@@ -18,12 +18,14 @@ public sealed class PhotoItem : INotifyPropertyChanged
     {
         Path = path;
         FileName = System.IO.Path.GetFileName(path);
+        IsVideo = VideoService.IsVideo(path);
         Gps = exif.Gps;
         GpsSource = exif.GpsSource;
         Direction = exif.Direction;
         Orientation = exif.Orientation;
         GpsError = exif.Error;
         UtcOffset = exif.UtcOffset;
+        TimeWritten = exif.TimeWritten;
         Camera = exif.Camera ?? UnknownCamera;
 
         DateFromExif = exif.DateTaken is not null;
@@ -35,6 +37,8 @@ public sealed class PhotoItem : INotifyPropertyChanged
 
     public string Path { get; }
     public string FileName { get; }
+    /// <summary>Film MP4/MOV: miniatura z systemu, lokalizacja i czas w metadanych QuickTime.</summary>
+    public bool IsVideo { get; }
     public GeoPoint? Gps { get; }
     public double? Direction { get; }
     public int Orientation { get; }
@@ -67,11 +71,15 @@ public sealed class PhotoItem : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Czas zapisany przez PhotoTag — już po korekcie zegara, więc korekty aparatu się nie dolicza.</summary>
+    public bool TimeWritten { get; }
+
     public TimeSpan ClockOffset
     {
         get => _clockOffset;
         set
         {
+            if (TimeWritten) value = TimeSpan.Zero;
             if (_clockOffset == value) return;
             _clockOffset = value;
             OnPropertyChanged();

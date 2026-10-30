@@ -23,11 +23,14 @@ Aplikacja desktopowa (WPF, .NET 8) do szybkiego uzupełniania współrzędnych G
 - **Zdjęcia z GPS na mapie**: zielone (złote = GPS z aparatu) punkty (miniatura po najechaniu, klik = wybór zdjęcia) i fioletowa trasa w kolejności czasu; warstwy w przełączniku mapy.
 - **Foldery referencyjne** (np. zdjęcia z telefonu, z podfolderami): ich zdjęcia z GPS służą tylko jako źródło podpowiedzi i interpolacji (niebieskie punkty), nie trafiają na listę.
 - Sugestia lokalizacji przy wyborze zdjęcia bez GPS: ślad GPS → interpolacja między zdjęciami z GPS (Δ ≤ 2 h, także z folderów ref.) → najbliższe zdjęcie z GPS (Δ ≤ 12 h). Wybór zdjęcia (z listy lub klik punktu na mapie) tylko przesuwa mapę — powiększenie pozostaje takie, jak ustawił użytkownik.
-- **Przesuwanie na osi czasu** (zdjęcia ze złą datą): przycisk „Ułóż kolejność…” (lub prawy klik na liście) otwiera osobny widok z dużymi miniaturami (3× większymi, bez dat i lokalizacji), ułożonymi wierszami w kolejności czasu. Przeciągnij dowolne zdjęcie na inne — lewa/prawa połowa kafelka decyduje, czy trafi przed, czy po nim; dostaje czas o 1 s przed/po tym zdjęciu (gdy brak miejsca — równomiernie między sąsiadami). „Cofnij” (Ctrl+Z) cofa 4 ostatnie przesunięcia. Na liście głównej: `Alt+↑`/`Alt+↓` przesuwa o jedną pozycję; prawy klik → „Ustaw datę i godzinę…” (grupa zachowuje odstępy) / „Przywróć datę z EXIF”. Czas ręczny (oznaczony „ręcznie”) zastępuje datę EXIF i korektę zegara przy sortowaniu, sesjach, śladzie GPS i interpolacji; jest pamiętany w ustawieniach (także dla pliku `_LOCPT`), pliku nie zmienia.
+- **Przesuwanie na osi czasu** (zdjęcia ze złą datą): przycisk „Ułóż kolejność…” (lub prawy klik na liście) otwiera osobny widok z dużymi miniaturami (3× większymi, bez dat i lokalizacji), ułożonymi wierszami w kolejności czasu. Przeciągnij dowolne zdjęcie na inne — lewa/prawa połowa kafelka decyduje, czy trafi przed, czy po nim; dostaje czas o 1 s przed/po tym zdjęciu (gdy brak miejsca — równomiernie między sąsiadami). „Cofnij” (Ctrl+Z) cofa 4 ostatnie przesunięcia. Na liście głównej: `Alt+↑`/`Alt+↓` przesuwa o jedną pozycję; prawy klik → „Ustaw datę i godzinę…” (grupa zachowuje odstępy) / „Przywróć datę z EXIF”. Czas ręczny (oznaczony „ręcznie”) zastępuje datę EXIF i korektę zegara przy sortowaniu, sesjach, śladzie GPS i interpolacji; jest pamiętany w ustawieniach do zapisu — przy zapisie lokalizacji trafia do pliku.
+- **Filmy** (MP4, MOV, M4V, 3GP) są na liście razem ze zdjęciami (znacznik „▶ film”): miniatura i podgląd to klatka z systemowego podglądu Windows (jak w Eksploratorze; bez kodeka, np. HEVC, pokazywana jest ikona). Czas i lokalizacja są czytane z metadanych QuickTime (`mvhd`, `udta/©xyz`, klucze Apple `creationdate` / `location.ISO6709`). Zapis tworzy `film_LOCPT.mp4` z lokalizacją (`©xyz` + klucz Apple, jeśli plik go używa) i czasem z listy (z korektą zegara / czasem ręcznym) w `mvhd`/`tkhd`/`mdhd` i `creationdate`; obraz i dźwięk są kopiowane bez przekodowania. Pofragmentowane MP4 nie są obsługiwane.
 - **Sesje**: lista grupowana po przerwie w czasie (domyślnie 30 min); „zaznacz” w nagłówku lub `G` zaznacza całą sesję. Wiele zdjęć: Ctrl/Shift + klik.
 - **Miejsca**: ulubione (★ Zapisz) i ostatnio użyte (automatycznie po zapisie); kopiuj/wklej punkt (Ctrl+C / Ctrl+V — współrzędne, link Google Maps/OSM lub adres).
 - Zapis GPS:
   - zapis tylko współrzędnych (+ kierunku i znacznika `GPSProcessingMethod = MANUAL`; piksele bez zmian), orientacja EXIF zachowana,
+  - zapisywany jest też czas z listy (z korektą zegara / czasem ręcznym) w `DateTimeOriginal`, `CreateDate` i `ModifyDate`, z `Software = PhotoTag` — po ponownym wczytaniu korekta zegara aparatu nie jest doliczana drugi raz (w filmach znacznik `©too`); czas tylko z daty pliku nie jest zapisywany,
+  - EXIF poprawiany po zapisie dla telefonów (Android/iOS odrzucają niezgodne pliki): wpisy IFD posortowane wg tagu, `GPSVersionID = 2.3.0.0`, współrzędne jako `st/1 min/1 sek·10000/10000`,
   - nazwa: `foto.jpg` → `foto_LOCPT.jpg`; edycja już oznaczonego pliku `_LOCPT` nadpisuje go po potwierdzeniu,
   - przy istniejącym `foto_LOCPT.jpg` — pytanie o nadpisaniu,
   - zapis przez plik tymczasowy `.tmp` + przeniesienie (atomowościowo bezpieczne),
@@ -57,11 +60,13 @@ Wymaga .NET SDK 8 oraz połączenia z internetem (kafelki mapy, Nominatim, Overp
 ## Architektura
 
 - `Models/PhotoItem.cs` — model zdjęcia (INPC): status i źródło GPS, czas po korekcie zegara (lokalny/UTC), sesja, miniaturka.
-- `Services/ExifService.cs` — odczyt/zapis EXIF (`ExifLibNet`): `GeoPoint`, `ReadInfo` (GPS i jego źródło, kierunek, data, strefa, aparat), `WriteGps` (z markerem `GPSProcessingMethod = MANUAL`), konwersja stopnie–DMS (clamp ujemnych sekund).
+- `Services/ExifService.cs` — odczyt/zapis EXIF (`ExifLibNet`): `GeoPoint`, `ReadInfo` (GPS i jego źródło, kierunek, data, strefa, aparat), `WriteGps` (z markerem `GPSProcessingMethod = MANUAL`) i poprawką `TiffFixer`, konwersja stopnie–DMS (clamp ujemnych sekund).
+- `Services/TiffFixer.cs` — poprawka zapisanego EXIF w miejscu: sortowanie wpisów IFD, `GPSVersionID`, czytelne wymierne współrzędne.
 - `Services/TrackStore.cs` — ślady GPS (GPX/KML/JSON Google), wyszukiwanie pozycji po czasie UTC.
 - `Services/SettingsService.cs` — trwałe ustawienia (JSON w `%APPDATA%`).
-- `Services/Imaging.cs` — dekodowanie miniatur/podglądów z uwzględnieniem orientacji EXIF.
+- `Services/Imaging.cs` — dekodowanie miniatur/podglądów z uwzględnieniem orientacji EXIF; klatki filmów przez `IShellItemImageFactory`.
 - `Assets/map.html` — mapa: warstwy, wyszukiwanie, komunikacja z WPF przez `window.chrome.webview.postMessage` / `setView(lat,lng,zoom)`.
+- `Services/VideoService.cs` — odczyt i zapis metadanych MP4/MOV (drzewo atomów moov, korekta `stco`/`co64`).
 - `MainWindow.Timeline.cs` — ręczny czas zdjęć: wstawianie na osi czasu, cofanie (4 kroki), `Alt+↑/↓`, menu kontekstowe.
 - `OrderWindow.xaml(.cs)` — widok „Ułóż kolejność”: siatka dużych miniatur, przeciąganie z linią wstawienia, cofanie.
 - `MainWindow.xaml(.cs)` — UI, sugerowanie punktów, zapis zbiorczy, zarządzanie trybami ( mapa / Street View / powiększenie). WebView2 jest natywnym HWND i wypada NAD elementami WPF — nakładki wymagają zwijania panelu mapy (`MapView.Visibility`).

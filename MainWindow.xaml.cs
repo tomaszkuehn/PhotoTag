@@ -911,11 +911,20 @@ public partial class MainWindow : Window
                     File.Copy(targetPath, targetBackup);
                 }
 
+                // czas tylko z metadanych lub ustawiony ręcznie — data pliku to zwykle data kopiowania/edycji
+                var writeTime = target.DateFromExif || target.TimeOverride is not null;
                 var tmp = targetPath + ".tmp";
                 var moved = false;
                 try
                 {
-                    ExifService.WriteGps(target.Path, tmp, point.Lat, point.Lng, entry.Direction);
+                    if (target.IsVideo)
+                        VideoService.WriteMetadata(target.Path, tmp, point.Lat, point.Lng,
+                            writeTime ? target.TimeUtc : null,
+                            writeTime ? target.Time : null,
+                            target.UtcOffset);
+                    else
+                        ExifService.WriteGps(target.Path, tmp, point.Lat, point.Lng, entry.Direction,
+                            writeTime ? target.Time : null);
                     if (File.Exists(targetPath))
                         File.Delete(targetPath);
                     File.Move(tmp, targetPath);
@@ -933,11 +942,9 @@ public partial class MainWindow : Window
                     originalBackup = System.IO.Path.Combine(UndoDir, Guid.NewGuid().ToString("N") + System.IO.Path.GetExtension(target.Path));
                     File.Move(target.Path, originalBackup);
                 }
-                if (target.TimeOverride is { } manual && !inPlace)
-                {
-                    _settings.TimeOverrides[targetPath] = manual;
+                // czas (ręczny / po korekcie) jest już w pliku — ręczne ustawienie dla niego niepotrzebne
+                if (writeTime && _settings.TimeOverrides.Remove(targetPath))
                     SettingsService.Save(_settings);
-                }
                 undo.Add(new UndoEntry(targetPath, targetBackup, originalBackup is null ? null : target.Path, originalBackup));
                 done++;
             }

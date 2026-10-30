@@ -14,7 +14,8 @@ public sealed record PhotoExif(
     string? Camera,
     double? Direction,
     GpsSource GpsSource,
-    bool Error);
+    bool Error,
+    bool TimeWritten = false);
 
 /// <summary>Skąd pochodzi pozycja GPS zdjęcia.</summary>
 public enum GpsSource
@@ -36,6 +37,12 @@ public static class ExifService
     /// <summary>Wartość GPSProcessingMethod oznaczająca pozycję wpisaną ręcznie (PhotoTag).</summary>
     private const string ManualMethod = "MANUAL";
 
+    /// <summary>
+    /// Software po zapisie czasu przez PhotoTag: data w pliku ma już korektę zegara aparatu
+    /// (<see cref="PhotoExif.TimeWritten"/>), więc nie wolno jej doliczać drugi raz.
+    /// </summary>
+    public const string TimeWrittenMarker = "PhotoTag";
+
     // Znaczniki zapisywane przez aparat/telefon razem z pozycją, a zwykle nie przez programy do geotagowania.
     private static readonly ExifTag[] DeviceGpsTags =
     {
@@ -56,13 +63,17 @@ public static class ExifService
         ExifTag.GPSImgDirection,
         ExifTag.GPSImgDirectionRef,
         ExifTag.GPSProcessingMethod,
+        ExifTag.GPSVersionID,
     };
 
+    /// <summary>Zdjęcia (EXIF) i filmy (MP4/MOV — <see cref="VideoService"/>).</summary>
     public static bool Supports(string extension) =>
-        extension.ToLowerInvariant() is ".jpg" or ".jpeg" or ".tif" or ".tiff";
+        extension.ToLowerInvariant() is ".jpg" or ".jpeg" or ".tif" or ".tiff" || VideoService.Supports(extension);
 
     public static PhotoExif ReadInfo(string path)
     {
+        if (VideoService.IsVideo(path))
+            return VideoService.ReadInfo(path);
         try
         {
             var file = ImageFile.FromFile(path);
@@ -74,11 +85,12 @@ public static class ExifService
                 && dv.Denominator != 0
                 ? (double)dv.Numerator / dv.Denominator
                 : (double?)null;
+            var timeWritten = file.Properties.Get<ExifAscii>(ExifTag.Software)?.Value?.Trim('\0', ' ') == TimeWrittenMarker;
 
             var lat = file.Properties.Get<GPSLatitudeLongitude>(ExifTag.GPSLatitude);
             var lon = file.Properties.Get<GPSLatitudeLongitude>(ExifTag.GPSLongitude);
             if (lat is null || lon is null)
-                return new PhotoExif(null, (int)orientation, dateTaken, offset, camera, null, GpsSource.None, false);
+                return new PhotoExif(null, (int)orientation, dateTaken, offset, camera, null, GpsSource.None, false, timeWritten);
 
             double la = ToDecimal(lat);
             double lo = ToDecimal(lon);
@@ -96,7 +108,7 @@ public static class ExifService
                     ? GpsSource.Device
                     : GpsSource.Unknown;
 
-            return new PhotoExif(new GeoPoint(la, lo), (int)orientation, dateTaken, offset, camera, direction, source, false);
+            return new PhotoExif(new GeoPoint(la, lo), (int)orientation, dateTaken, offset, camera, direction, source, false, timeWritten);
         }
         catch
         {
@@ -154,7 +166,8 @@ public static class ExifService
         return $"{make} {model}";
     }
 
-    public static void WriteGps(string source, string target, double lat, double lng, double? direction = null)
+    /// <summary>Zapisuje współrzędne (i kierunek); <paramref name="time"/> — czas lokalny po korekcie do DateTimeOriginal/Digitized/DateTime.</summary>
+    public static void WriteGps(string source, string target, double lat, double lng, double? direction = null, DateTime? time = null)
     {
         var file = ImageFile.FromFile(source);
 
@@ -171,6 +184,7 @@ public static class ExifService
         file.Properties.Set(new GPSLatitudeLongitude(ExifTag.GPSLatitude, latDms.d, latDms.m, latDms.s));
         file.Properties.Set(new GPSLatitudeLongitude(ExifTag.GPSLongitude, lonDms.d, lonDms.m, lonDms.s));
 
+        file.Properties.Set(new ExifByteArray(ExifTag.GPSVersionID, new byte[] { 2, 3, 0, 0 }));
         file.Properties.Set(new ExifEncodedString(ExifTag.GPSProcessingMethod, ManualMethod, Encoding.ASCII));
 
         if (direction is { } dir)
@@ -181,7 +195,17 @@ public static class ExifService
             file.Properties.Set(new ExifURational(ExifTag.GPSImgDirection, (uint)Math.Round(dir * 100), 100));
         }
 
+        if (time is { } t)
+        {
+            t = DateTime.SpecifyKind(t, DateTimeKind.Unspecified);
+            file.Properties.Set(new ExifDateTime(ExifTag.DateTimeOriginal, t));
+            file.Properties.Set(new ExifDateTime(ExifTag.DateTimeDigitized, t));
+            file.Properties.Set(new ExifDateTime(ExifTag.DateTime, t));
+            file.Properties.Set(new ExifAscii(ExifTag.Software, TimeWrittenMarker, Encoding.ASCII));
+        }
+
         file.Save(target);
+        TiffFixer.Fix(target, lat, lng);
     }
 
     private static double ToDecimal(GPSLatitudeLongitude v) =>

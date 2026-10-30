@@ -5,6 +5,9 @@
         Title="PhotoTag — geotagowanie zdjęć"
         Width="1500" Height="900" MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -134,7 +137,14 @@
                         <Border BorderBrush="{Binding StatusBrush}" BorderThickness="2"
                                 CornerRadius="4" Padding="4" Margin="0,2">
                             <StackPanel Orientation="Horizontal">
-                                <Image Width="72" Height="72" Source="{Binding Thumb}" Stretch="Uniform"/>
+                                <Grid Width="72" Height="72">
+                                    <Image Source="{Binding Thumb}" Stretch="Uniform"/>
+                                    <Border Background="#99000000" CornerRadius="3" Padding="4,0,4,1"
+                                            HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="2"
+                                            Visibility="{Binding IsVideo, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="▶ film" Foreground="White" FontSize="10"/>
+                                    </Border>
+                                </Grid>
                                 <StackPanel Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="250">
                                     <TextBlock Text="{Binding FileName}" FontWeight="SemiBold"
                                                TextTrimming="CharacterEllipsis"/>
