@@ -52,11 +52,21 @@ public partial class MainWindow : Window
         try
         {
             using var doc = JsonDocument.Parse(e.WebMessageAsJson);
-            if (doc.RootElement.GetProperty("type").GetString() != "pick") return;
-            _pending = new GeoPoint(
-                doc.RootElement.GetProperty("lat").GetDouble(),
-                doc.RootElement.GetProperty("lng").GetDouble());
-            UpdateStatus(PhotoList.SelectedItem as PhotoItem);
+            var type = doc.RootElement.GetProperty("type").GetString();
+            if (type == "pick")
+            {
+                _pending = new GeoPoint(
+                    doc.RootElement.GetProperty("lat").GetDouble(),
+                    doc.RootElement.GetProperty("lng").GetDouble());
+                UpdateStatus(PhotoList.SelectedItem as PhotoItem);
+            }
+            else if (type == "streetview")
+            {
+                var p = new GeoPoint(
+                    doc.RootElement.GetProperty("lat").GetDouble(),
+                    doc.RootElement.GetProperty("lng").GetDouble());
+                _ = ShowStreetViewAsync(p);
+            }
         }
         catch
         {
@@ -192,6 +202,7 @@ public partial class MainWindow : Window
 
     private async void ShowEnlarged()
     {
+        CloseStreetView();
         var item = PhotoList.SelectedItem as PhotoItem;
         MapView.Visibility = Visibility.Collapsed;
         PreviewBorder.Visibility = Visibility.Collapsed;
@@ -216,12 +227,55 @@ public partial class MainWindow : Window
         PreviewBorder.Visibility = Visibility.Visible;
     }
 
+    private async Task ShowStreetViewAsync(GeoPoint point)
+    {
+        CloseEnlarged();
+        try
+        {
+            await StreetView.EnsureCoreWebView2Async();
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Nie udało się uruchomić Street View: " + ex.Message;
+            return;
+        }
+
+        var lat = point.Lat.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        var lng = point.Lng.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        StreetView.CoreWebView2.Navigate(
+            $"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={lat},{lng}");
+
+        MapView.Visibility = Visibility.Collapsed;
+        StreetViewBorder.Visibility = Visibility.Visible;
+        StatusText.Text = "Street View: klik „← Mapa”, aby wrócić.";
+    }
+
+    private void StreetViewBack_Click(object sender, RoutedEventArgs e)
+    {
+        CloseStreetView();
+    }
+
+    private void CloseStreetView()
+    {
+        if (StreetViewBorder.Visibility != Visibility.Visible) return;
+        StreetViewBorder.Visibility = Visibility.Collapsed;
+        if (StreetView.CoreWebView2 is not null)
+            StreetView.CoreWebView2.Navigate("about:blank");
+        MapView.Visibility = Visibility.Visible;
+    }
+
     private void EnlargedOverlay_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e) =>
         CloseEnlarged();
 
     private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && EnlargedOverlay.Visibility == Visibility.Visible)
+        if (e.Key != Key.Escape) return;
+        if (StreetViewBorder.Visibility == Visibility.Visible)
+        {
+            CloseStreetView();
+            e.Handled = true;
+        }
+        else if (EnlargedOverlay.Visibility == Visibility.Visible)
         {
             CloseEnlarged();
             e.Handled = true;
@@ -283,11 +337,6 @@ public partial class MainWindow : Window
                 "PhotoTag", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             return;
 
-        if (!batch && targets[0].HasGps &&
-            MessageBox.Show(this, $"Zdjęcie {targets[0].FileName} ma już GPS. Nadpisać współrzędne?",
-                "PhotoTag", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
-            return;
-
         var deleteOriginal = DeleteOriginalCheck.IsChecked == true;
         var done = 0;
         var errors = new List<string>();
@@ -296,9 +345,43 @@ public partial class MainWindow : Window
         {
             try
             {
-                var newFile = UniqueTaggedPath(target.Path);
-                ExifService.WriteGps(target.Path, newFile, point.Lat, point.Lng);
-                if (deleteOriginal)
+                var targetPath = ResolveTargetPath(target.Path);
+                var inPlace = string.Equals(targetPath, target.Path, StringComparison.OrdinalIgnoreCase);
+
+                if (inPlace)
+                {
+                    if (MessageBox.Show(this,
+                            $"Nadpisać istniejący plik {target.FileName} nowymi współrzędnymi?",
+                            "PhotoTag — nadpisywanie", MessageBoxButton.YesNo, MessageBoxImage.Question)
+                        != MessageBoxResult.Yes)
+                        continue;
+                }
+                else if (File.Exists(targetPath))
+                {
+                    if (MessageBox.Show(this,
+                            $"Plik {System.IO.Path.GetFileName(targetPath)} już istnieje.\nNadpisać?",
+                            "PhotoTag — nadpisywanie", MessageBoxButton.YesNo, MessageBoxImage.Warning)
+                        != MessageBoxResult.Yes)
+                        continue;
+                }
+
+                var tmp = targetPath + ".tmp";
+                var moved = false;
+                try
+                {
+                    ExifService.WriteGps(target.Path, tmp, point.Lat, point.Lng);
+                    if (File.Exists(targetPath))
+                        File.Delete(targetPath);
+                    File.Move(tmp, targetPath);
+                    moved = true;
+                }
+                finally
+                {
+                    if (!moved && File.Exists(tmp))
+                        File.Delete(tmp);
+                }
+
+                if (deleteOriginal && !inPlace)
                     File.Delete(target.Path);
                 done++;
             }
@@ -325,17 +408,15 @@ public partial class MainWindow : Window
             PhotoList.SelectedItem = next;
     }
 
-    private static string UniqueTaggedPath(string original)
+    private static string ResolveTargetPath(string source)
     {
-        var dir = System.IO.Path.GetDirectoryName(original)!;
-        var ext = System.IO.Path.GetExtension(original);
-        var stem = System.IO.Path.GetFileNameWithoutExtension(original);
-        var baseStem = stem.EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase) ? stem : stem + "_LOCPT";
+        var dir = System.IO.Path.GetDirectoryName(source)!;
+        var ext = System.IO.Path.GetExtension(source);
+        var stem = System.IO.Path.GetFileNameWithoutExtension(source);
 
-        var candidate = System.IO.Path.Combine(dir, baseStem + ext);
-        for (var i = 2; File.Exists(candidate); i++)
-            candidate = System.IO.Path.Combine(dir, $"{baseStem} ({i}){ext}");
-        return candidate;
+        if (stem.EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase))
+            return source;
+        return System.IO.Path.Combine(dir, stem + "_LOCPT" + ext);
     }
 
     private void UpdateCounts()

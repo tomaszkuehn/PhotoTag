@@ -31,6 +31,7 @@
 <div id="toolbar">
     <input id="q" placeholder="Szukaj miejsca lub adresu…"/>
     <button onclick="search()">Szukaj</button>
+    <button onclick="openStreetView()">Street View ↗</button>
 </div>
 <div id="map"></div>
 <div id="coords">Kliknij na mapie, aby wybrać lokalizację</div>
@@ -38,9 +39,15 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     const map = L.map('map').setView([52.0, 21.0], 6);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const streetLayer = L.layerGroup().addTo(map);
+    const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
+    });
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19, attribution: '&copy; Esri'
+    });
+    osm.addTo(map);
+    L.control.layers({ 'Mapa (OSM)': osm, 'Satelita': sat }).addTo(map);
 
     let marker = null;
 
@@ -74,20 +81,70 @@
     async function search() {
         const q = document.getElementById('q').value.trim();
         if (!q) return;
+        updateCoords('Szukam: ' + q + '…');
+
+        let hit = await geocode(q);
+        if (hit) {
+            map.setView([hit.lat, hit.lon], 13);
+            setMarker(hit.lat, hit.lon);
+            return;
+        }
+
+        const n = await searchStreets(q);
+        updateCoords(n > 0
+            ? `Znaleziono ${n} odcinków ulic „${q}” (niebieskie linie; klik = postaw znacznik)`
+            : `Nie znaleziono: ${q}`);
+    }
+
+    function updateCoords(text) {
+        document.getElementById('coords').textContent = text;
+    }
+
+    async function geocode(q) {
         try {
-            const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), {
+            const b = map.getBounds();
+            const vb = `viewbox=${b.getWest()},${b.getNorth()},${b.getEast()},${b.getSouth()}`;
+            const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&' + vb + '&q=' + encodeURIComponent(q), {
                 headers: { 'Accept-Language': 'pl' }
             });
             const j = await r.json();
-            if (j && j.length > 0) {
-                const lat = +j[0].lat, lon = +j[0].lon;
-                map.setView([lat, lon], 13);
-                setMarker(lat, lon);
-            } else {
-                document.getElementById('coords').textContent = 'Nie znaleziono: ' + q;
-            }
+            if (j && j.length > 0) return { lat: +j[0].lat, lon: +j[0].lon };
+        } catch (err) { }
+        return null;
+    }
+
+    async function searchStreets(q) {
+        try {
+            streetLayer.clearLayers();
+            const b = map.getBounds();
+            const bbox = `(${b.getSouth()},${b.getWest()},${b.getNorth()},${b.getEast()})`;
+            const name = q.replace(/\\/g, '\\\\').replace(/"/g, '');
+            const query = `[out:json][timeout:25];way["highway"]["name"~"${name}",i]${bbox};out geom;`;
+            const r = await fetch('https://overpass-api.de/api/interpreter', {
+                method: 'POST',
+                body: 'data=' + encodeURIComponent(query)
+            });
+            const j = await r.json();
+            const ways = (j.elements || []).filter(e => e.geometry && e.geometry.length).slice(0, 50);
+            ways.forEach(w => {
+                const pts = w.geometry.map(g => [g.lat, g.lon]);
+                L.polyline(pts, { color: '#1e6bd6', weight: 5, opacity: 0.75 }).addTo(streetLayer);
+            });
+            if (ways.length > 0)
+                map.fitBounds(streetLayer.getBounds().pad(0.15));
+            return ways.length;
         } catch (err) {
-            document.getElementById('coords').textContent = 'Błąd wyszukiwania (brak sieci?)';
+            return 0;
+        }
+    }
+
+    function openStreetView() {
+        const ll = marker ? marker.getLatLng() : map.getCenter();
+        if (window.chrome && window.chrome.webview) {
+            window.chrome.webview.postMessage({
+                type: 'streetview',
+                lat: ll.lat, lng: ll.lng
+            });
         }
     }
 

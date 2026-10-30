@@ -86,6 +86,23 @@
                 <Border Grid.Row="2" CornerRadius="4" BorderBrush="#CCC" BorderThickness="1">
                     <wv2:WebView2 x:Name="MapView"/>
                 </Border>
+
+                <Border x:Name="StreetViewBorder" Grid.Row="2" CornerRadius="4"
+                        BorderBrush="#CCC" BorderThickness="1" Visibility="Collapsed">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Background="#F1F1F1" LastChildFill="False">
+                            <Button x:Name="StreetViewBack" Content="← Mapa" Click="StreetViewBack_Click"
+                                    Padding="8,4" Margin="6"/>
+                            <TextBlock Text="Street View (Google)" VerticalAlignment="Center"
+                                       Margin="6,0,0,0" Foreground="#555"/>
+                        </DockPanel>
+                        <wv2:WebView2 x:Name="StreetView" Grid.Row="1"/>
+                    </Grid>
+                </Border>
             </Grid>
 
             <Border x:Name="EnlargedOverlay" Grid.Column="1" Background="#111111"
