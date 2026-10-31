@@ -252,7 +252,7 @@
                     Visibility="Collapsed" MouseDown="EnlargedOverlay_MouseDown">
                 <Grid>
                     <Image x:Name="EnlargedImage" Stretch="Uniform" Margin="10"/>
-                    <TextBlock Text="Kliknij lub Esc — zamknij podgląd" Foreground="#AAA"
+                    <TextBlock x:Name="EnlargedHint" Text="Kliknij lub Esc — zamknij podgląd" Foreground="#AAA"
                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                Margin="0,0,16,10" FontSize="12"/>
                 </Grid>

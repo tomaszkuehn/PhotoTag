@@ -615,9 +615,31 @@ public partial class MainWindow : Window
         EnlargedOverlay.Visibility = Visibility.Visible;
         Keyboard.Focus(EnlargedOverlay);
         if (item is null) return;
+        await LoadEnlargedAsync(item);
+    }
+
+    /// <summary>Strzałki w dużym podglądzie: poprzednie/następne zdjęcie z listy (zaznaczenie idzie razem).</summary>
+    private async void StepEnlarged(int delta)
+    {
+        if (_items.Count == 0) return;
+        var idx = _current is null ? 0 : Math.Clamp(_items.IndexOf(_current) + delta, 0, _items.Count - 1);
+        var item = _items[idx];
+        if (ReferenceEquals(item, _current)) return;
+        MaintainSelection(item);
+        // miniatura od razu, pełna rozdzielczość po wczytaniu
+        EnlargedImage.Source = item.Thumb;
+        await LoadEnlargedAsync(item);
+    }
+
+    private async Task LoadEnlargedAsync(PhotoItem item)
+    {
+        var n = _items.IndexOf(item) + 1;
+        EnlargedHint.Text = $"{item.FileName} · {n}/{_items.Count} · ← → poprzednie/następne · Kliknij lub Esc — zamknij podgląd";
         try
         {
-            EnlargedImage.Source = await Task.Run(() => Imaging.LoadBitmap(item.Path, 2400, item.Orientation));
+            var bmp = await Task.Run(() => Imaging.LoadBitmap(item.Path, 2400, item.Orientation));
+            if (ReferenceEquals(_current, item) && EnlargedOverlay.Visibility == Visibility.Visible)
+                EnlargedImage.Source = bmp;
         }
         catch
         {
@@ -681,6 +703,23 @@ public partial class MainWindow : Window
         {
             e.Handled = HandleKey("Escape", false, false);
             return;
+        }
+        if (EnlargedOverlay.Visibility == Visibility.Visible && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            var step = e.Key switch
+            {
+                Key.Left or Key.Up or Key.PageUp => -1,
+                Key.Right or Key.Down or Key.PageDown or Key.Space => 1,
+                Key.Home => -_items.Count,
+                Key.End => _items.Count,
+                _ => 0,
+            };
+            if (step != 0)
+            {
+                StepEnlarged(step);
+                e.Handled = true;
+                return;
+            }
         }
         if (Keyboard.FocusedElement is TextBox or ComboBox or ComboBoxItem)
             return;

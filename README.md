@@ -5,7 +5,7 @@ Aplikacja desktopowa (WPF, .NET 8) do szybkiego uzupełniania współrzędnych G
 ## Funkcje
 
 - Przeglądanie folderu z filtrami `.jpg/.jpeg/.tif/.tiff` — miniaturki, status GPS, data zdjęcia (EXIF `DateTimeOriginal` → `DateTimeDigitized` → data pliku, oznaczona „(plik)").
-- Sortowanie wg daty; panel pojedynczego zdjęcia z dużym podglądem (miniaturka/podgląd, kliknięcie otwiera powiększenie na cały panel prawy, zamknięcie kliknięciem lub `Esc`).
+- Sortowanie wg daty; panel pojedynczego zdjęcia z dużym podglądem (miniaturka/podgląd, kliknięcie otwiera powiększenie na cały panel prawy, zamknięcie kliknięciem lub `Esc`). W powiększeniu strzałki `←`/`→` (także `↑`/`↓`, `PgUp`/`PgDn`, spacja) przechodzą do poprzedniego/następnego zdjęcia z listy, `Home`/`End` — pierwsze/ostatnie; u dołu nazwa i numer zdjęcia.
 - Mapa OpenStreetMap (Leaflet 1.9.4 w WebView2, lokalny host wirtualny `maphost`):
   - klik / przeciąganie markera = wybór współrzędnych,
   - wyszukiwanie miejsc i adresów (Nominatim, ważone aktualnym obszarem widoku),
