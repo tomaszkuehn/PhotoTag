@@ -98,8 +98,76 @@ public partial class MainWindow
             StatusText.Text = later ? "Zdjęcie jest już na końcu osi czasu." : "Zdjęcie jest już na początku osi czasu.";
             return;
         }
-        PlaceInTimeline(moving, anchor, after);
+        if (PlaceInTimeline(moving, anchor, after))
+            _ = OfferNeighborLocationAsync(moving);
     }
+
+    /// <summary>
+    /// Po przesunięciu na osi czasu: pyta, czy skopiować pozycję od najbliższego sąsiada z GPS
+    /// z tego samego dnia (poprzedniego lub następnego) i od razu ją zapisuje.
+    /// Pomija zdjęcia z GPS z aparatu i takie, które już mają pozycję sąsiada.
+    /// </summary>
+    internal async Task OfferNeighborLocationAsync(List<PhotoItem> moving, Window? owner = null)
+    {
+        var targets = moving.Where(i => i.HasValidDate && !i.GpsFromDevice && !i.GpsError).ToList();
+        if (targets.Count == 0) return;
+        var first = _items.IndexOf(moving[0]);
+        var last = _items.IndexOf(moving[^1]);
+        if (first < 0 || last < 0) return;
+        var day = targets[0].Time.Date;
+
+        PhotoItem? Find(IEnumerable<PhotoItem> seq)
+        {
+            foreach (var i in seq)
+            {
+                if (moving.Contains(i) || !i.HasValidDate) continue;
+                if (i.Time.Date != day) return null;
+                if (i.HasGps && !i.GpsError) return i;
+            }
+            return null;
+        }
+
+        var prev = Find(_items.Take(first).Reverse());
+        var next = Find(_items.Skip(last + 1));
+        bool HasPositionOf(PhotoItem n) => targets.All(t => t.Gps is { } g &&
+            Math.Abs(g.Lat - n.Gps!.Lat) < 1e-6 && Math.Abs(g.Lng - n.Gps.Lng) < 1e-6);
+        if (prev is null && next is null) return;
+        if ((prev is not null && HasPositionOf(prev)) || (next is not null && HasPositionOf(next))) return;
+
+        static string Describe(PhotoItem n) => $"{n.FileName} ({n.Time:HH:mm:ss}, {n.Gps!.Lat:F5}, {n.Gps.Lng:F5})";
+        var what = targets.Count == 1 ? targets[0].FileName : $"{targets.Count} przesuniętych zdjęć";
+        var overwrite = targets.Any(t => t.HasGps) ? "\n\n(Obecna dopisana pozycja zostanie zastąpiona.)" : "";
+
+        PhotoItem? source;
+        var dlgOwner = owner ?? this;
+        if (prev is not null && next is not null)
+        {
+            var dist = DistanceMeters(prev.Gps!, next.Gps!);
+            var r = MessageBox.Show(dlgOwner,
+                $"Skopiować pozycję do {what} od sąsiada z tego samego dnia?\n\n" +
+                $"Tak — poprzednie: {Describe(prev)}\nNie — następne: {Describe(next)}\nAnuluj — bez zmian\n\n" +
+                $"Odległość między sąsiadami: {FormatDistance(dist)}{overwrite}",
+                "PhotoTag — pozycja od sąsiada", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+            source = r switch { MessageBoxResult.Yes => prev, MessageBoxResult.No => next, _ => null };
+        }
+        else
+        {
+            var only = (prev ?? next)!;
+            source = MessageBox.Show(dlgOwner,
+                    $"Skopiować pozycję do {what} od {(prev is not null ? "poprzedniego" : "następnego")} zdjęcia " +
+                    $"z tego samego dnia?\n\n{Describe(only)}{overwrite}",
+                    "PhotoTag — pozycja od sąsiada", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes
+                ? only
+                : null;
+        }
+        if (source is null) return;
+
+        var point = source.Gps!;
+        await ApplyEntriesAsync(targets.Select(t => (Item: t, Point: point, Direction: (double?)null)).ToList(),
+            batchPrompt: null, confirmOverwrite: false, keepSelection: true);
+    }
+
+    private static string FormatDistance(double m) => m < 1000 ? $"{m:0} m" : $"{m / 1000:0.0} km";
 
     private void SetTimeOverride(PhotoItem item, DateTime? local)
     {

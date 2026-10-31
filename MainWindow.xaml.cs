@@ -702,6 +702,7 @@ public partial class MainWindow : Window
             Key.Z => "z",
             Key.C => "c",
             Key.V => "v",
+            Key.Delete => "Delete",
             _ => null,
         };
         if (key is null) return;
@@ -738,11 +739,20 @@ public partial class MainWindow : Window
             case "z" when ctrl:
                 UndoButton_Click(this, new RoutedEventArgs());
                 return true;
+            case "c" when ctrl && shift:
+                CopyLocation();
+                return true;
+            case "v" when ctrl && shift:
+                _ = PasteLocationAsync();
+                return true;
             case "c" when ctrl:
                 CopyBtn_Click(this, new RoutedEventArgs());
                 return true;
             case "v" when ctrl:
                 PasteBtn_Click(this, new RoutedEventArgs());
+                return true;
+            case "Delete" when !ctrl && !shift:
+                DeleteSelected();
                 return true;
             case "ArrowUp":
                 MoveSelection(-1);
@@ -865,7 +875,8 @@ public partial class MainWindow : Window
             $"• ze śladu GPS: {fromTrack}\n• z interpolacji między zdjęciami: {estimates.Count - fromTrack}");
     }
 
-    private async Task ApplyEntriesAsync(List<(PhotoItem Item, GeoPoint Point, double? Direction)> entries, string? batchPrompt)
+    private async Task ApplyEntriesAsync(List<(PhotoItem Item, GeoPoint Point, double? Direction)> entries, string? batchPrompt,
+        bool confirmOverwrite = true, bool keepSelection = false)
     {
         if (batchPrompt is not null &&
             MessageBox.Show(this, batchPrompt, "PhotoTag", MessageBoxButton.YesNo, MessageBoxImage.Question)
@@ -889,7 +900,7 @@ public partial class MainWindow : Window
 
                 if (inPlace)
                 {
-                    if (MessageBox.Show(this,
+                    if (confirmOverwrite && MessageBox.Show(this,
                             $"Nadpisać istniejący plik {target.FileName} nowymi współrzędnymi?",
                             "PhotoTag — nadpisywanie", MessageBoxButton.YesNo, MessageBoxImage.Question)
                         != MessageBoxResult.Yes)
@@ -982,7 +993,7 @@ public partial class MainWindow : Window
             .FirstOrDefault(i => !i.HasGps && !i.GpsError && !processed.Contains(i));
 
         if (_folder is not null)
-            await LoadFolderAsync(_folder, next?.Path);
+            await LoadFolderAsync(_folder, keepSelection ? ResolveTargetPath(entries[0].Item.Path) : next?.Path);
         StatusText.Text = status;
     }
 
@@ -1032,6 +1043,137 @@ public partial class MainWindow : Window
             return source;
         return System.IO.Path.Combine(dir, stem + "_LOCPT" + ext);
     }
+
+    // ---------------------------------------------------------------- usuwanie
+
+    /// <summary>
+    /// „Usuwa” zaznaczone zdjęcia: zmienia nazwę na …jpg.bak (razem z ukrytym oryginałem pliku _LOCPT,
+    /// który inaczej wróciłby na listę). Przywrócenie = usunięcie „.bak” z nazwy.
+    /// </summary>
+    private void DeleteSelected()
+    {
+        var sel = SelectedPhotos();
+        if (sel.Count == 0) return;
+        var what = sel.Count == 1 ? sel[0].FileName : $"{sel.Count} zdjęć";
+        if (MessageBox.Show(this,
+                $"Usunąć {what}?\n\nPliki dostaną dodatkowe rozszerzenie .bak (np. {sel[0].FileName}.bak) — " +
+                "można je przywrócić, usuwając „.bak” z nazwy.",
+                "Usuń zdjęcia", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
+        var lastIdx = _items.IndexOf(sel[^1]);
+        var next = _items.Skip(lastIdx + 1).Concat(_items.Take(lastIdx).Reverse()).FirstOrDefault(i => !sel.Contains(i));
+        var deleted = new List<PhotoItem>();
+        var errors = new List<string>();
+        foreach (var item in sel)
+        {
+            try
+            {
+                File.Move(item.Path, BakPath(item.Path));
+                deleted.Add(item);
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{item.FileName}: {ex.Message}");
+                continue;
+            }
+            _settings.TimeOverrides.Remove(item.Path);
+
+            var stem = System.IO.Path.GetFileNameWithoutExtension(item.Path);
+            if (!stem.EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase)) continue;
+            var original = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(item.Path)!,
+                stem[..^"_LOCPT".Length] + System.IO.Path.GetExtension(item.Path));
+            _settings.TimeOverrides.Remove(original);
+            if (!File.Exists(original)) continue;
+            try
+            {
+                File.Move(original, BakPath(original));
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"{System.IO.Path.GetFileName(original)} (oryginał): {ex.Message}");
+            }
+        }
+
+        if (deleted.Count > 0)
+        {
+            SettingsService.Save(_settings);
+            PreviewImage.Source = null;
+            RebuildList(_items.Except(deleted).ToList(), next);
+            SendPhotosToMap();
+            StatusText.Text = deleted.Count == 1
+                ? $"Usunięto {deleted[0].FileName} (→ .bak)."
+                : $"Usunięto {deleted.Count} zdjęć (→ .bak).";
+        }
+        if (errors.Count > 0)
+            MessageBox.Show(this, string.Join("\n", errors), "Nie udało się usunąć", MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
+
+    /// <summary>plik.jpg → plik.jpg.bak (gdy zajęte: plik.jpg.2.bak, …).</summary>
+    private static string BakPath(string path)
+    {
+        var bak = path + ".bak";
+        for (int n = 2; File.Exists(bak); n++)
+            bak = $"{path}.{n}.bak";
+        return bak;
+    }
+
+    private void DeleteMenu_Click(object sender, RoutedEventArgs e) => DeleteSelected();
+
+    // ---------------------------------------------------------------- kopiowanie lokalizacji między zdjęciami
+
+    /// <summary>Lokalizacja skopiowana z innego zdjęcia (punkt + kierunek), do wklejenia na zaznaczone.</summary>
+    private (GeoPoint Point, double? Direction, string Source)? _copiedLocation;
+
+    private void CopyLocation()
+    {
+        if (_current is not { HasGps: true, Gps: { } gps })
+        {
+            ShowInfo("Wybrane zdjęcie nie ma lokalizacji do skopiowania.");
+            return;
+        }
+        _copiedLocation = (gps, _current.Direction, _current.FileName);
+        StatusText.Text = $"Skopiowano lokalizację z {_current.FileName}: {gps.Lat:F6}, {gps.Lng:F6}" +
+                          (_current.Direction is { } d ? $", kierunek {d:0}°" : "") +
+                          ". Zaznacz inne zdjęcia i użyj „Wklej lokalizację” (Ctrl+Shift+V).";
+    }
+
+    private async Task PasteLocationAsync()
+    {
+        if (_copiedLocation is not { } copied)
+        {
+            ShowInfo("Najpierw skopiuj lokalizację ze zdjęcia (prawy klik → „Kopiuj lokalizację”, Ctrl+Shift+C).");
+            return;
+        }
+        var targets = SelectedPhotos();
+        if (targets.Count == 0)
+        {
+            ShowInfo("Zaznacz zdjęcia, do których wkleić lokalizację.");
+            return;
+        }
+        var pointText = $"{copied.Point.Lat:F6}, {copied.Point.Lng:F6}" +
+                        (copied.Direction is { } d ? $", kierunek {d:0}°" : "");
+        var what = targets.Count == 1 ? targets[0].FileName : $"{targets.Count} zdjęć";
+        await ApplyEntriesAsync(
+            targets.Select(t => (Item: t, Point: copied.Point, Direction: copied.Direction)).ToList(),
+            $"Skopiować lokalizację z {copied.Source} ({pointText}) do: {what}?");
+    }
+
+    private void PhotoListMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        CopyLocationMenu.IsEnabled = _current is { HasGps: true };
+        CopyLocationMenu.Header = _current is { HasGps: true }
+            ? $"Kopiuj lokalizację z {_current.FileName} (Ctrl+Shift+C)"
+            : "Kopiuj lokalizację tego zdjęcia (Ctrl+Shift+C)";
+        PasteLocationMenu.IsEnabled = _copiedLocation is not null;
+        PasteLocationMenu.Header = _copiedLocation is { } c
+            ? $"Wklej lokalizację z {c.Source} do zaznaczonych (Ctrl+Shift+V)"
+            : "Wklej lokalizację do zaznaczonych (Ctrl+Shift+V)";
+    }
+
+    private void CopyLocationMenu_Click(object sender, RoutedEventArgs e) => CopyLocation();
+
+    private async void PasteLocationMenu_Click(object sender, RoutedEventArgs e) => await PasteLocationAsync();
 
     // ---------------------------------------------------------------- ślady GPS
 

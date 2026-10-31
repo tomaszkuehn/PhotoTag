@@ -67,27 +67,45 @@ public partial class OrderWindow : Window
         }
     }
 
-    /// <summary>Ustawia kafelki w kolejności listy głównego okna (Move — bez ponownego ładowania obrazów).</summary>
+    /// <summary>
+    /// Ustawia kafelki w kolejności listy głównego okna (Move — bez ponownego ładowania obrazów).
+    /// Po zapisie lokalizacji lista jest wczytywana od nowa (nowe obiekty, plik …_LOCPT),
+    /// więc kafelki dopasowuje ścieżka bez „_LOCPT”.
+    /// </summary>
     private void SyncOrder()
     {
         var order = _main.Photos;
-        var byItem = _tiles.ToDictionary(t => t.Item);
+        var byKey = new Dictionary<string, Tile>(StringComparer.OrdinalIgnoreCase);
+        foreach (var t in _tiles)
+            byKey.TryAdd(TileKey(t.Item), t);
+        var used = new HashSet<Tile>();
         for (int i = 0; i < order.Count; i++)
         {
-            if (!byItem.TryGetValue(order[i], out var tile))
+            if (!byKey.TryGetValue(TileKey(order[i]), out var tile) || !used.Add(tile))
             {
                 tile = new Tile(order[i]);
-                _tiles.Insert(i, tile);
+                used.Add(tile);
+                _tiles.Insert(Math.Min(i, _tiles.Count), tile);
                 _ = LoadImageAsync(tile);
                 continue;
             }
+            tile.Item = order[i];
             var current = _tiles.IndexOf(tile);
             if (current != i)
                 _tiles.Move(current, i);
         }
-        while (_tiles.Count > order.Count)
-            _tiles.RemoveAt(_tiles.Count - 1);
+        for (int i = _tiles.Count - 1; i >= 0; i--)
+            if (!used.Contains(_tiles[i]))
+                _tiles.RemoveAt(i);
         UpdateUndo();
+    }
+
+    private static string TileKey(PhotoItem item)
+    {
+        var stem = System.IO.Path.GetFileNameWithoutExtension(item.Path);
+        if (stem.EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase))
+            stem = stem[..^"_LOCPT".Length];
+        return System.IO.Path.Combine(System.IO.Path.GetDirectoryName(item.Path)!, stem + System.IO.Path.GetExtension(item.Path));
     }
 
     private void UpdateUndo()
@@ -186,10 +204,21 @@ public partial class OrderWindow : Window
             after = true;
         }
 
-        if (!_main.PlaceInTimeline(new List<PhotoItem> { moving.Item }, anchor, after)) return;
+        var moved = new List<PhotoItem> { moving.Item };
+        if (!_main.PlaceInTimeline(moved, anchor, after)) return;
         SyncOrder();
         Tiles.SelectedItem = moving;
         Tiles.ScrollIntoView(moving);
+
+        // pytanie o pozycję sąsiada dopiero po zakończeniu przeciągania (okno modalne w trakcie DoDragDrop)
+        Dispatcher.InvokeAsync(async () =>
+        {
+            await _main.OfferNeighborLocationAsync(moved, this);
+            if (_closed) return;
+            SyncOrder();
+            Tiles.SelectedItem = moving;
+            Tiles.ScrollIntoView(moving);
+        }, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     /// <summary>Kafelek, przed/po którym wstawić (Container null = puste miejsce za ostatnim).</summary>
@@ -258,10 +287,20 @@ public partial class OrderWindow : Window
     private sealed class Tile : INotifyPropertyChanged
     {
         private ImageSource? _image;
+        private PhotoItem _item;
 
-        public Tile(PhotoItem item) => Item = item;
+        public Tile(PhotoItem item) => _item = item;
 
-        public PhotoItem Item { get; }
+        public PhotoItem Item
+        {
+            get => _item;
+            set
+            {
+                if (ReferenceEquals(_item, value)) return;
+                _item = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Item)));
+            }
+        }
 
         public ImageSource? Image
         {

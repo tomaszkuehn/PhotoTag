@@ -81,7 +81,7 @@
                      VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                      MouseDoubleClick="PhotoList_MouseDoubleCick">
                 <ListBox.ContextMenu>
-                    <ContextMenu>
+                    <ContextMenu Opened="PhotoListMenu_Opened">
                         <MenuItem Header="Ułóż kolejność zdjęć…" Click="OrderBtn_Click" FontWeight="SemiBold"/>
                         <MenuItem Header="Ustaw datę i godzinę…" Click="SetTimeMenu_Click"/>
                         <MenuItem Header="Przesuń wcześniej (Alt+↑)" Click="MoveEarlierMenu_Click"/>
@@ -89,6 +89,13 @@
                         <Separator/>
                         <MenuItem Header="Cofnij ostatnią zmianę czasu" Click="UndoTimeMenu_Click"/>
                         <MenuItem Header="Przywróć datę z EXIF" Click="ResetTimeMenu_Click"/>
+                        <Separator/>
+                        <MenuItem x:Name="CopyLocationMenu" Header="Kopiuj lokalizację tego zdjęcia (Ctrl+Shift+C)"
+                                  Click="CopyLocationMenu_Click"/>
+                        <MenuItem x:Name="PasteLocationMenu" Header="Wklej lokalizację do zaznaczonych (Ctrl+Shift+V)"
+                                  Click="PasteLocationMenu_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Usuń (Del) → zmiana nazwy na .bak" Click="DeleteMenu_Click"/>
                     </ContextMenu>
                 </ListBox.ContextMenu>
                 <ListBox.GroupStyle>
@@ -216,7 +223,7 @@
                                    Foreground="#555" TextTrimming="CharacterEllipsis" MaxWidth="520"/>
                     </WrapPanel>
                     <TextBlock Foreground="#888" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                               Text="Mapa: klik = punkt, przeciągnij = korekta, prawy klik = kierunek zdjęcia. Skróty: Enter zapis · N / Shift+N następne/poprzednie bez GPS · G zaznacz sesję · S Street View · Ctrl+C/V kopiuj/wklej punkt · Ctrl+Z cofnij · Zła data: „Ułóż kolejność…” lub Alt+↑/↓"/>
+                               Text="Mapa: klik = punkt, przeciągnij = korekta, prawy klik = kierunek zdjęcia. Skróty: Enter zapis · N / Shift+N następne/poprzednie bez GPS · G zaznacz sesję · S Street View · Ctrl+C/V kopiuj/wklej punkt · Ctrl+Shift+C/V lokalizacja zdjęcia → zaznaczone · Del usuń (.bak) · Ctrl+Z cofnij · Zła data: „Ułóż kolejność…” lub Alt+↑/↓"/>
                 </StackPanel>
 
                 <Border Grid.Row="2" CornerRadius="4" BorderBrush="#CCC" BorderThickness="1">

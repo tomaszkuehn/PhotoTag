@@ -346,7 +346,7 @@
     // Skróty klawiszowe działają też, gdy fokus jest na mapie.
     document.addEventListener('keydown', e => {
         if (e.target && e.target.tagName === 'INPUT') return;
-        const keys = ['Enter', 'n', 'N', 'p', 'P', 'g', 'G', 's', 'S', 'z', 'Z', 'c', 'C', 'v', 'V', 'Escape', 'ArrowUp', 'ArrowDown'];
+        const keys = ['Enter', 'n', 'N', 'p', 'P', 'g', 'G', 's', 'S', 'z', 'Z', 'c', 'C', 'v', 'V', 'Escape', 'ArrowUp', 'ArrowDown', 'Delete'];
         if (!keys.includes(e.key)) return;
         e.preventDefault();
         send({ type: 'key', key: e.key, shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey });
