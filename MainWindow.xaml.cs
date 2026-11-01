@@ -46,6 +46,9 @@ public partial class MainWindow : Window
 
     private Estimate? _estimate;
     private string? _folder;
+    private DescriptionStore? _descriptions;
+    /// <summary>Zdjęcie, którego opis jest w polu DescriptionBox.</summary>
+    private PhotoItem? _descItem;
 
     public MainWindow()
     {
@@ -334,14 +337,18 @@ public partial class MainWindow : Window
                 .EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase) is false &&
             locptPaths.Contains(ResolveTargetPath(i.Path)));
 
+        CommitDescription();
+        _descriptions = DescriptionStore.Load(folder);
         foreach (var item in found)
         {
             item.ClockOffset = OffsetFor(item.Camera);
             if (_settings.TimeOverrides.TryGetValue(item.Path, out var manual))
                 item.TimeOverride = manual;
+            item.Description = _descriptions.Get(item.FileName);
         }
 
         _current = null;
+        ShowDescription(null);
         PreviewImage.Source = null;
         var restored = previousName is null
             ? null
@@ -467,6 +474,7 @@ public partial class MainWindow : Window
     private async Task ShowItemAsync(PhotoItem item)
     {
         _current = item;
+        ShowDescription(item);
         if (CameraCombo.Items.Contains(item.Camera))
             CameraCombo.SelectedItem = item.Camera;
 
@@ -619,6 +627,60 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Strzałki w dużym podglądzie: poprzednie/następne zdjęcie z listy (zaznaczenie idzie razem).</summary>
+    // ---------------------------------------------------------------- opisy
+
+    /// <summary>Pokazuje opis zdjęcia w polu edycji (wcześniej zapisuje opis poprzedniego).</summary>
+    private void ShowDescription(PhotoItem? item)
+    {
+        if (!ReferenceEquals(item, _descItem))
+            CommitDescription();
+        _descItem = item;
+        DescriptionBox.Text = item?.Description ?? "";
+        DescriptionBox.IsEnabled = item is not null;
+    }
+
+    private void CommitDescription()
+    {
+        if (_descItem is not { } item || _descriptions is null) return;
+        var text = DescriptionBox.Text.Trim();
+        if (text == (item.Description ?? "")) return;
+        if (TrySaveDescription(() => _descriptions.Set(item.FileName, text)))
+            item.Description = text.Length == 0 ? null : text;
+    }
+
+    private bool TrySaveDescription(Action save)
+    {
+        try
+        {
+            save();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ShowInfo("Nie udało się zapisać opisu do " + DescriptionStore.FileName + ":\n" + ex.Message);
+            return false;
+        }
+    }
+
+    private void DescriptionBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Return) return;
+        CommitDescription();
+        FocusList();
+        e.Handled = true;
+    }
+
+    /// <summary>Fokus na zaznaczonym zdjęciu, żeby strzałki od razu przechodziły po liście.</summary>
+    private void FocusList()
+    {
+        if (PhotoList.ItemContainerGenerator.ContainerFromItem(PhotoList.SelectedItem) is ListBoxItem li)
+            li.Focus();
+        else
+            PhotoList.Focus();
+    }
+
+    private void DescriptionBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => CommitDescription();
+
     private async void StepEnlarged(int delta)
     {
         if (_items.Count == 0) return;
@@ -635,6 +697,8 @@ public partial class MainWindow : Window
     {
         var n = _items.IndexOf(item) + 1;
         EnlargedHint.Text = $"{item.FileName} · {n}/{_items.Count} · ← → poprzednie/następne · Kliknij lub Esc — zamknij podgląd";
+        EnlargedDescription.Text = item.Description ?? "";
+        EnlargedDescription.Visibility = item.HasDescription ? Visibility.Visible : Visibility.Collapsed;
         try
         {
             var bmp = await Task.Run(() => Imaging.LoadBitmap(item.Path, 2400, item.Orientation));
@@ -699,6 +763,14 @@ public partial class MainWindow : Window
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && Keyboard.FocusedElement == DescriptionBox)
+        {
+            // anuluj edycję opisu
+            DescriptionBox.Text = _descItem?.Description ?? "";
+            FocusList();
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.Escape)
         {
             e.Handled = HandleKey("Escape", false, false);
@@ -995,6 +1067,8 @@ public partial class MainWindow : Window
                 // czas (ręczny / po korekcie) jest już w pliku — ręczne ustawienie dla niego niepotrzebne
                 if (writeTime && _settings.TimeOverrides.Remove(targetPath))
                     SettingsService.Save(_settings);
+                if (!inPlace)
+                    TrySaveDescription(() => _descriptions?.Rename(target.FileName, System.IO.Path.GetFileName(targetPath)));
                 undo.Add(new UndoEntry(targetPath, targetBackup, originalBackup is null ? null : target.Path, originalBackup));
                 done++;
             }

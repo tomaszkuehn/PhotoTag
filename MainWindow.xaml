@@ -161,6 +161,10 @@
                                                Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Text="{Binding Camera}" FontSize="10" Foreground="#888"
                                                Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Description, StringFormat=✎ {0}}" FontSize="11"
+                                               FontStyle="Italic" Foreground="#3A4A66" Margin="0,1,0,0"
+                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Description}"
+                                               Visibility="{Binding HasDescription, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -183,6 +187,13 @@
                 </Border>
 
                 <StackPanel Grid.Row="1" Margin="0,4">
+                    <DockPanel Margin="0,0,0,2">
+                        <TextBlock Text="Opis:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBox x:Name="DescriptionBox" Padding="3,2" TextWrapping="Wrap" MaxHeight="60"
+                                 VerticalScrollBarVisibility="Auto" IsEnabled="False"
+                                 KeyDown="DescriptionBox_KeyDown" LostKeyboardFocus="DescriptionBox_LostKeyboardFocus"
+                                 ToolTip="Opis zdjęcia — Enter zapisuje (do opisy.json w folderze), Esc anuluje"/>
+                    </DockPanel>
                     <WrapPanel Orientation="Horizontal">
                         <WrapPanel.Resources>
                             <Style TargetType="Button">
@@ -252,6 +263,9 @@
                     Visibility="Collapsed" MouseDown="EnlargedOverlay_MouseDown">
                 <Grid>
                     <Image x:Name="EnlargedImage" Stretch="Uniform" Margin="10"/>
+                    <TextBlock x:Name="EnlargedDescription" Foreground="White" FontSize="15"
+                               HorizontalAlignment="Left" VerticalAlignment="Bottom" TextWrapping="Wrap"
+                               Margin="16,0,16,30" Background="#88000000" Padding="8,4"/>
                     <TextBlock x:Name="EnlargedHint" Text="Kliknij lub Esc — zamknij podgląd" Foreground="#AAA"
                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                Margin="0,0,16,10" FontSize="12"/>

@@ -13,6 +13,7 @@ public sealed class PhotoItem : INotifyPropertyChanged
     private TimeSpan _clockOffset;
     private DateTime? _timeOverride;
     private string _sessionLabel = "";
+    private string? _description;
 
     public PhotoItem(string path, PhotoExif exif)
     {
@@ -141,6 +142,21 @@ public sealed class PhotoItem : INotifyPropertyChanged
             OnPropertyChanged();
         }
     }
+
+    /// <summary>Opis z pliku opisy.json w folderze zdjęcia.</summary>
+    public string? Description
+    {
+        get => _description;
+        set
+        {
+            if (_description == value) return;
+            _description = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasDescription));
+        }
+    }
+
+    public bool HasDescription => !string.IsNullOrEmpty(_description);
 
     public ImageSource? Thumb
     {

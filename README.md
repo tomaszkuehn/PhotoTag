@@ -40,6 +40,7 @@ Aplikacja desktopowa (WPF, .NET 8) do szybkiego uzupełniania współrzędnych G
   - po zapisie automatycznie zaznaczane jest kolejne zdjęcie bez GPS.
 - **Kopiowanie lokalizacji między zdjęciami**: prawy klik na zdjęciu z GPS → „Kopiuj lokalizację z …” (`Ctrl+Shift+C`), potem zaznacz inne zdjęcia → „Wklej lokalizację … do zaznaczonych” (`Ctrl+Shift+V`). Kopiowany jest punkt i kierunek; po potwierdzeniu zapis od razu (jak `Enter`, z cofaniem). `Ctrl+C`/`Ctrl+V` dalej kopiuje punkt mapy jako tekst przez schowek.
 - **Usuwanie**: `Del` lub prawy klik → „Usuń” zmienia nazwę zaznaczonych plików na `…jpg.bak` (np. `IMG_1.jpg.bak`; gdy zajęte — `IMG_1.jpg.2.bak`) i zdejmuje je z listy. Przy pliku `_LOCPT` tak samo zmieniany jest jego oryginał, żeby nie wrócił na listę. Przywrócenie: usuń `.bak` z nazwy i odśwież folder.
+- Opis zdjęcia: pole „Opis” nad przyciskami — `Enter` (lub kliknięcie gdzie indziej) zapisuje, `Esc` anuluje. Opisy trafiają do pliku `opisy.json` w folderze ze zdjęciami (`{ "nazwa pliku": "opis" }`); na liście widać je kursywą, w dużym podglądzie u dołu. Opis przechodzi na kopię `_LOCPT` po zapisie lokalizacji.
 - Skróty (działają też przy fokusie na mapie): `Enter` zapis, `Del` usuń (→ `.bak`), `N` / `Shift+N` następne/poprzednie bez GPS, `G` sesja, `S` Street View, `Ctrl+C`/`Ctrl+V`, `Ctrl+Shift+C`/`Ctrl+Shift+V` lokalizacja zdjęcia → zaznaczone, `Ctrl+Z`, `Alt+↑`/`Alt+↓` przesunięcie na osi czasu, `Esc`.
 - Ustawienia (ostatni folder, ślady, foldery ref., zegary, miejsca, ręczne czasy zdjęć): `%APPDATA%\PhotoTag\settings.json`.
 
