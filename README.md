@@ -84,3 +84,11 @@ Wymaga .NET SDK 8 oraz połączenia z internetem (kafelki mapy, Nominatim, Overp
 Autor: Tomasz Kuehn. Wersja programu ustawiana jest w `PhotoTag.csproj` (`<Version>`) i widoczna w tytule okna oraz w menu **Pomoc → O programie…** (razem z pełnym tekstem licencji i listą komponentów zewnętrznych).
 
 Program udostępniany na licencji MIT — zob. plik [LICENSE](LICENSE). Dane map: © współtwórcy OpenStreetMap (ODbL); zdjęcia satelitarne: © Esri.
+
+## Instalator (Windows 10/11 x64)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\build-installer.ps1
+```
+
+Wynik: `installer\output\PhotoTag-<wersja>-setup.exe` (wersja z `<Version>` w `PhotoTag.csproj`). Wymaga Inno Setup 6 (`winget install JRSoftware.InnoSetup`). Instalator zawiera .NET (nie trzeba go instalować osobno), pozwala wybrać instalację dla wszystkich lub tylko dla siebie i — gdy brak — pobiera Microsoft Edge WebView2 Runtime.

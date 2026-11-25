@@ -54,6 +54,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Title += " · v" + AboutWindow.Version;
+        // Domyślnie WebView2 trzyma dane obok exe — po instalacji w Program Files nie ma tam prawa zapisu.
+        var webViewData = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PhotoTag", "WebView2");
+        MapView.CreationProperties = new Microsoft.Web.WebView2.Wpf.CoreWebView2CreationProperties { UserDataFolder = webViewData };
+        StreetView.CreationProperties = new Microsoft.Web.WebView2.Wpf.CoreWebView2CreationProperties { UserDataFolder = webViewData };
         PhotoList.ItemsSource = _items;
         CollectionViewSource.GetDefaultView(_items).GroupDescriptions
             .Add(new PropertyGroupDescription(nameof(PhotoItem.SessionLabel)));
