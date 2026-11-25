@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="PhotoTag — geotagowanie zdjęć"
+        Closing="Window_Closing"
         Width="1500" Height="900" MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
@@ -11,10 +12,25 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Padding="8,4" Background="#F1F1F1" BorderBrush="#DDD" BorderThickness="0,0,0,1">
+        <Menu Grid.Row="0" Background="White" Padding="2">
+            <MenuItem Header="_Plik">
+                <MenuItem Header="_Wybierz folder…" Click="PickFolderBtn_Click"/>
+                <MenuItem Header="_Odśwież" Click="RefreshBtn_Click"/>
+                <MenuItem Header="Otwórz folder w _Eksploratorze" Click="OpenInExplorerMenu_Click"/>
+                <Separator/>
+                <MenuItem Header="_Zakończ" InputGestureText="Alt+F4" Click="ExitMenu_Click"/>
+            </MenuItem>
+            <MenuItem Header="Pomo_c">
+                <MenuItem Header="_Skróty klawiszowe" Click="ShortcutsMenu_Click"/>
+                <Separator/>
+                <MenuItem Header="_O programie (wersja, autor, licencja)…" Click="AboutMenu_Click"/>
+            </MenuItem>
+        </Menu>
+        <Border Grid.Row="1" Padding="8,4" Background="#F1F1F1" BorderBrush="#DDD" BorderThickness="0,0,0,1">
             <WrapPanel Orientation="Horizontal">
                 <WrapPanel.Resources>
                     <Style TargetType="Button">
@@ -61,13 +77,13 @@
             </WrapPanel>
         </Border>
 
-        <StatusBar Grid.Row="2">
+        <StatusBar Grid.Row="3">
             <StatusBarItem>
                 <TextBlock x:Name="StatusText" Text="Wybierz folder ze zdjęciami" TextTrimming="CharacterEllipsis"/>
             </StatusBarItem>
         </StatusBar>
 
-        <Grid Grid.Row="1">
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="340"/>
                 <ColumnDefinition Width="*"/>
@@ -79,7 +95,7 @@
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      VirtualizingPanel.IsVirtualizing="True"
                      VirtualizingPanel.IsVirtualizingWhenGrouping="True"
-                     MouseDoubleClick="PhotoList_MouseDoubleCick">
+                     MouseDoubleClick="PhotoList_MouseDoubleClick">
                 <ListBox.ContextMenu>
                     <ContextMenu Opened="PhotoListMenu_Opened">
                         <MenuItem Header="Ułóż kolejność zdjęć…" Click="OrderBtn_Click" FontWeight="SemiBold"/>

@@ -79,3 +79,8 @@ Wymaga .NET SDK 8 oraz połączenia z internetem (kafelki mapy, Nominatim, Overp
 - Street View osadzony przez mapę Google bez klucza API (nawigacja top-level WebView2); przy pierwszym użyciu może pojawić się zgoda cookies Google.
 - Rozszerzenia inne niż JPEG/TIFF (np. RAW) nie są obsługiwane.
 - HEIC nieobsługiwany.
+## Autor i licencja
+
+Autor: Tomasz Kuehn. Wersja programu ustawiana jest w `PhotoTag.csproj` (`<Version>`) i widoczna w tytule okna oraz w menu **Pomoc → O programie…** (razem z pełnym tekstem licencji i listą komponentów zewnętrznych).
+
+Program udostępniany na licencji MIT — zob. plik [LICENSE](LICENSE). Dane map: © współtwórcy OpenStreetMap (ODbL); zdjęcia satelitarne: © Esri.

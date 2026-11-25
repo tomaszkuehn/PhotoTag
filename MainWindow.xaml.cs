@@ -53,6 +53,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title += " · v" + AboutWindow.Version;
         PhotoList.ItemsSource = _items;
         CollectionViewSource.GetDefaultView(_items).GroupDescriptions
             .Add(new PropertyGroupDescription(nameof(PhotoItem.SessionLabel)));
@@ -607,7 +608,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void PhotoList_MouseDoubleCick(object sender, MouseButtonEventArgs e)
+    private void PhotoList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (PreviewImage.Source is not null)
             ShowEnlarged();
@@ -626,7 +627,6 @@ public partial class MainWindow : Window
         await LoadEnlargedAsync(item);
     }
 
-    /// <summary>Strzałki w dużym podglądzie: poprzednie/następne zdjęcie z listy (zaznaczenie idzie razem).</summary>
     // ---------------------------------------------------------------- opisy
 
     /// <summary>Pokazuje opis zdjęcia w polu edycji (wcześniej zapisuje opis poprzedniego).</summary>
@@ -681,6 +681,7 @@ public partial class MainWindow : Window
 
     private void DescriptionBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => CommitDescription();
 
+    /// <summary>Strzałki w dużym podglądzie: poprzednie/następne zdjęcie z listy (zaznaczenie idzie razem).</summary>
     private async void StepEnlarged(int delta)
     {
         if (_items.Count == 0) return;
@@ -1783,4 +1784,48 @@ public partial class MainWindow : Window
 
     private void ShowInfo(string message) =>
         MessageBox.Show(this, message, "PhotoTag", MessageBoxButton.OK, MessageBoxImage.Information);
+
+    // ---------------------------------------------------------------- menu, zamykanie
+
+    /// <summary>Opis wpisany w pole i niezatwierdzony (bez utraty fokusu) przepadałby przy zamknięciu okna.</summary>
+    private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e) => CommitDescription();
+
+    private void ExitMenu_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void OpenInExplorerMenu_Click(object sender, RoutedEventArgs e)
+    {
+        if (_folder is null || !Directory.Exists(_folder))
+        {
+            ShowInfo("Najpierw wybierz folder ze zdjęciami.");
+            return;
+        }
+        var args = _current is not null && File.Exists(_current.Path)
+            ? $"/select,\"{_current.Path}\""
+            : $"\"{_folder}\"";
+        try
+        {
+            System.Diagnostics.Process.Start("explorer.exe", args);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Nie udało się otworzyć Eksploratora: " + ex.Message;
+        }
+    }
+
+    private void ShortcutsMenu_Click(object sender, RoutedEventArgs e) => ShowInfo(
+        "Mapa: klik = punkt, przeciągnij = korekta, prawy klik = kierunek zdjęcia.\n\n" +
+        "Enter — zapisz lokalizację\n" +
+        "N / Shift+N (P) — następne / poprzednie zdjęcie bez GPS\n" +
+        "↑ / ↓ — poprzednie / następne zdjęcie\n" +
+        "G — zaznacz całą sesję\n" +
+        "S — Street View dla punktu mapy\n" +
+        "Ctrl+C / Ctrl+V — kopiuj / wklej punkt (współrzędne, link, adres)\n" +
+        "Ctrl+Shift+C / Ctrl+Shift+V — kopiuj lokalizację zdjęcia / wklej do zaznaczonych\n" +
+        "Del — usuń (zmiana nazwy na .bak)\n" +
+        "Ctrl+Z — cofnij zapis\n" +
+        "Alt+↑ / Alt+↓ — przesuń zdjęcie wcześniej / później na osi czasu\n\n" +
+        "Duży podgląd: ← → (↑ ↓, PgUp/PgDn, spacja) poprzednie/następne, Home/End, Esc zamyka.");
+
+    private void AboutMenu_Click(object sender, RoutedEventArgs e) =>
+        new AboutWindow { Owner = this }.ShowDialog();
 }

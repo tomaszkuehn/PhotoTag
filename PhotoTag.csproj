@@ -8,6 +8,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>PhotoTag</RootNamespace>
     <AssemblyName>PhotoTag</AssemblyName>
+
+    <!-- Wersja i autorstwo — pokazywane w „Pomoc → O programie…” -->
+    <Version>1.0.0</Version>
+    <Product>PhotoTag</Product>
+    <Authors>Tomasz Kuehn</Authors>
+    <Company>Tomasz Kuehn</Company>
+    <Copyright>© 2026 Tomasz Kuehn</Copyright>
+    <Description>Geotagowanie zdjęć i filmów: uzupełnianie współrzędnych GPS na mapie.</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +25,7 @@
 
   <ItemGroup>
     <Content Include="Assets\map.html" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="LICENSE" LogicalName="PhotoTag.LICENSE" />
   </ItemGroup>
 
 </Project>

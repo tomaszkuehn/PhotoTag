@@ -48,7 +48,10 @@ public static class SettingsService
         try
         {
             Directory.CreateDirectory(Dir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+            // zapis przez plik tymczasowy — przerwany zapis nie zniszczy ustawień (ulubione, korekty zegara)
+            var tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(tmp, FilePath, overwrite: true);
         }
         catch
         {
