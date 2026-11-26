@@ -1,0 +1,107 @@
+<Window x:Class="PhotoTag.StartWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PhotoTag — jak zacząć"
+        Icon="/Assets/PhotoTag.ico"
+        Width="640" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Window.Resources>
+        <Style x:Key="StepCard" TargetType="Border">
+            <Setter Property="Background" Value="#F7F9FC"/>
+            <Setter Property="BorderBrush" Value="#D5DEEA"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="12,10"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+        </Style>
+        <Style x:Key="StepNo" TargetType="Border">
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="CornerRadius" Value="15"/>
+            <Setter Property="Background" Value="#0078D7"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="12,5"/>
+            <Setter Property="Margin" Value="0,8,8,0"/>
+        </Style>
+    </Window.Resources>
+    <StackPanel Margin="18,14,18,14">
+        <TextBlock Text="Jak zacząć — trzy kroki" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock Margin="0,4,0,14" Foreground="#555" TextWrapping="Wrap"
+                   Text="PhotoTag dopisuje do zdjęć miejsce, w którym zostały zrobione (współrzędne GPS). Oryginały zostają nietknięte — zapisywana jest kopia z dopiskiem _LOCPT."/>
+
+        <Border Style="{StaticResource StepCard}">
+            <DockPanel>
+                <Border Style="{StaticResource StepNo}">
+                    <TextBlock x:Name="Step1No" Text="1" Foreground="White" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <StackPanel>
+                    <TextBlock Text="Wskaż folder ze zdjęciami do opisania" FontWeight="SemiBold" FontSize="14"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#444" Margin="0,2,0,0"
+                               Text="Wejdź do folderu i kliknij „Otwórz” (albo kliknij dowolne zdjęcie z tego folderu). Jeśli zdjęcia są w podfolderach, zaznacz w tym oknie „Wczytaj także zdjęcia z podfolderów”. Kolejne foldery dodasz później przyciskiem „+ Dodaj folder…” lub przeciągając je na okno."/>
+                    <WrapPanel>
+                        <Button x:Name="Step1Btn" Content="Wybierz folder…" FontWeight="SemiBold" Click="Step1Btn_Click"/>
+                    </WrapPanel>
+                    <TextBlock x:Name="Step1Result" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="#1B7F3B" Visibility="Collapsed"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Style="{StaticResource StepCard}">
+            <DockPanel>
+                <Border Style="{StaticResource StepNo}">
+                    <TextBlock x:Name="Step2No" Text="2" Foreground="White" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <StackPanel>
+                    <TextBlock Text="Skąd wziąć lokalizację? (nieobowiązkowe)" FontWeight="SemiBold" FontSize="14"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#444" Margin="0,2,0,0">
+                        <Run Text="Możesz od razu klikać miejsca na mapie (krok 3). Szybciej pójdzie, jeśli PhotoTag ma podpowiedzi:"/>
+                        <LineBreak/>
+                        <Run Text="•" FontWeight="Bold"/> <Run FontWeight="SemiBold" Text="Ślad GPS"/>
+                        <Run Text="— plik GPX/KML z zegarka, nawigacji lub historii lokalizacji Google (Takeout)."/>
+                        <LineBreak/>
+                        <Run Text="•" FontWeight="Bold"/> <Run FontWeight="SemiBold" Text="Folder referencyjny"/>
+                        <Run Text="— zdjęcia z telefonu z tego samego wyjazdu (z włączoną lokalizacją). Zdjęcie z aparatu dostanie pozycję zdjęcia z telefonu zrobionego najbliżej w czasie."/>
+                    </TextBlock>
+                    <WrapPanel>
+                        <Button x:Name="TrackBtn" Content="Wczytaj ślad GPS…" Click="TrackBtn_Click"/>
+                        <Button x:Name="RefBtn" Content="Dodaj folder ze zdjęciami z telefonu…" Click="RefBtn_Click"/>
+                    </WrapPanel>
+                    <TextBlock x:Name="Step2Result" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="#1B7F3B" Visibility="Collapsed"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Style="{StaticResource StepCard}">
+            <DockPanel>
+                <Border Style="{StaticResource StepNo}">
+                    <TextBlock Text="3" Foreground="White" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <StackPanel>
+                    <TextBlock Text="Opisz zdjęcia" FontWeight="SemiBold" FontSize="14"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#444" Margin="0,2,0,0">
+                        <Run Text="Zdjęcia bez lokalizacji mają na liście pomarańczowoczerwoną ramkę. Kliknij zdjęcie → kliknij miejsce na mapie → naciśnij"/>
+                        <Run FontWeight="SemiBold" Text="Enter"/><Run Text=". Klawisz"/>
+                        <Run FontWeight="SemiBold" Text="N"/>
+                        <Run Text="przechodzi do następnego zdjęcia bez GPS. Gdy masz ślad lub folder referencyjny, przycisk"/>
+                        <Run FontWeight="SemiBold" Text="„Uzupełnij automatycznie”"/>
+                        <Run Text="zrobi to za Ciebie dla wszystkich zdjęć naraz."/>
+                    </TextBlock>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <DockPanel Margin="0,4,0,0">
+            <Button DockPanel.Dock="Right" Content="Zaczynam" FontWeight="SemiBold" IsDefault="True" IsCancel="True"
+                    Margin="8,0,0,0" Click="CloseBtn_Click"/>
+            <Button DockPanel.Dock="Right" Content="Poradnik (PDF)" Margin="8,0,0,0" Click="GuideBtn_Click"/>
+            <CheckBox x:Name="ShowAtStartCheck" Content="Pokazuj to okno przy starcie, gdy nie ma wczytanych zdjęć"
+                      VerticalAlignment="Center"/>
+        </DockPanel>
+    </StackPanel>
+</Window>

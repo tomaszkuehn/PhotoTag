@@ -11,7 +11,7 @@
     <ApplicationIcon>Assets\PhotoTag.ico</ApplicationIcon>
 
     <!-- Wersja i autorstwo — pokazywane w „Pomoc → O programie…” -->
-    <Version>1.0.0</Version>
+    <Version>1.0.2</Version>
     <Product>PhotoTag</Product>
     <Authors>Tomasz Kuehn</Authors>
     <Company>Tomasz Kuehn</Company>
@@ -26,6 +26,10 @@
 
   <ItemGroup>
     <Content Include="Assets\map.html" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Poradnik otwierany z menu Pomoc → Poradnik (PDF) -->
+    <Content Include="docs\PhotoTag-poradnik.pdf" Link="PhotoTag-poradnik.pdf" CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true"
+             Condition="Exists('docs\PhotoTag-poradnik.pdf')" />
     <EmbeddedResource Include="LICENSE" LogicalName="PhotoTag.LICENSE" />
     <Resource Include="Assets\PhotoTag.ico" />
   </ItemGroup>

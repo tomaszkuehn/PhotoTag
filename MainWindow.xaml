@@ -5,6 +5,7 @@
         Title="PhotoTag — geotagowanie zdjęć"
         Icon="/Assets/PhotoTag.ico"
         Closing="Window_Closing"
+        AllowDrop="True" DragOver="Window_DragOver" Drop="Window_Drop"
         Width="1500" Height="900" MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen">
     <Window.Resources>
@@ -17,22 +18,27 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Menu Grid.Row="0" Background="White" Padding="2">
+        <Menu x:Name="MainMenu" Grid.Row="0" Background="White" Padding="2">
             <MenuItem Header="_Plik">
-                <MenuItem Header="_Wybierz folder…" Click="PickFolderBtn_Click"/>
+                <MenuItem Header="_Otwórz folder ze zdjęciami…" Click="OpenFolderBtn_Click"/>
+                <MenuItem Header="_Dodaj kolejny folder…" Click="AddFolderBtn_Click"/>
+                <MenuItem Header="Zamknij wszystkie _foldery" Click="RemoveFoldersMenu_Click"/>
                 <MenuItem Header="_Odśwież" Click="RefreshBtn_Click"/>
                 <MenuItem Header="Otwórz folder w _Eksploratorze" Click="OpenInExplorerMenu_Click"/>
                 <Separator/>
                 <MenuItem Header="_Zakończ" InputGestureText="Alt+F4" Click="ExitMenu_Click"/>
             </MenuItem>
             <MenuItem Header="Pomo_c">
+                <MenuItem Header="_Jak zacząć (kreator)…" Click="StartGuideMenu_Click"/>
+                <MenuItem Header="_Poradnik (PDF)" Click="GuidePdfMenu_Click"/>
+                <Separator/>
                 <MenuItem Header="_Skróty klawiszowe" Click="ShortcutsMenu_Click"/>
                 <Separator/>
                 <MenuItem Header="_O programie (wersja, autor, licencja)…" Click="AboutMenu_Click"/>
             </MenuItem>
         </Menu>
         <Border Grid.Row="1" Padding="8,4" Background="#F1F1F1" BorderBrush="#DDD" BorderThickness="0,0,0,1">
-            <WrapPanel Orientation="Horizontal">
+            <WrapPanel x:Name="ToolbarPanel" Orientation="Horizontal">
                 <WrapPanel.Resources>
                     <Style TargetType="Button">
                         <Setter Property="Margin" Value="6,3,0,3"/>
@@ -41,7 +47,12 @@
                 </WrapPanel.Resources>
                 <TextBlock Text="Folder:" VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <TextBox x:Name="FolderBox" Width="360" IsReadOnly="True" VerticalContentAlignment="Center" Margin="0,3"/>
-                <Button x:Name="PickFolderBtn" Content="Wybierz folder…" Click="PickFolderBtn_Click"/>
+                <Button Content="Otwórz folder…" Click="OpenFolderBtn_Click" FontWeight="SemiBold"
+                        ToolTip="Wczytuje zdjęcia z folderu (zastępuje obecną listę). Można też przeciągnąć folder na okno."/>
+                <Button Content="+ Dodaj folder…" Click="AddFolderBtn_Click"
+                        ToolTip="Dołącza zdjęcia z kolejnego folderu do listy (np. drugi aparat, drugi dzień wyjazdu)"/>
+                <CheckBox x:Name="SubfoldersCheck" Content="z podfolderami" VerticalAlignment="Center" Margin="8,0,0,0"
+                          Click="SubfoldersCheck_Click" ToolTip="Wczytuj zdjęcia także z podfolderów"/>
                 <Button x:Name="RefreshBtn" Content="Odśwież" Click="RefreshBtn_Click"/>
                 <Button Content="Ułóż kolejność…" Click="OrderBtn_Click"
                         ToolTip="Osobny widok dużych miniatur: przeciągnij zdjęcie ze złą datą we właściwe miejsce na osi czasu"/>
@@ -57,7 +68,8 @@
                 <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="10,4"/>
                 <TextBlock Text="Foldery ref.:" VerticalAlignment="Center"
                            ToolTip="Zdjęcia z GPS z tych folderów (np. z telefonu) służą tylko jako źródło podpowiedzi"/>
-                <Button Content="+ Dodaj…" Click="AddRefFolderBtn_Click"/>
+                <Button Content="+ Dodaj…" Click="AddRefFolderBtn_Click"
+                        ToolTip="Folder ze zdjęciami z telefonu (z lokalizacją) z tego samego okresu — źródło podpowiedzi pozycji"/>
                 <Button Content="Wyczyść" Click="ClearRefFoldersBtn_Click"/>
                 <TextBlock x:Name="RefInfo" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="#555"/>
 
@@ -80,7 +92,14 @@
 
         <StatusBar Grid.Row="3">
             <StatusBarItem>
-                <TextBlock x:Name="StatusText" Text="Wybierz folder ze zdjęciami" TextTrimming="CharacterEllipsis"/>
+                <ProgressBar x:Name="ScanProgress" Width="220" Height="14" Visibility="Collapsed"/>
+            </StatusBarItem>
+            <StatusBarItem>
+                <Button x:Name="CancelScanBtn" Content="Przerwij" Padding="8,0" Visibility="Collapsed"
+                        Cursor="Arrow" Click="CancelScanBtn_Click"/>
+            </StatusBarItem>
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="" TextTrimming="CharacterEllipsis"/>
             </StatusBarItem>
         </StatusBar>
 

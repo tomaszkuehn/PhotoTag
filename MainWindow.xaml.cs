@@ -20,6 +20,8 @@ public partial class MainWindow : Window
 
     private readonly ObservableCollection<PhotoItem> _items = new();
     private readonly SemaphoreSlim _thumbLock = new(4, 4);
+    /// <summary>Zmienia się przy każdym wczytywaniu — miniatury poprzedniej listy przestają się generować.</summary>
+    private int _thumbGeneration;
     private readonly AppSettings _settings = SettingsService.Load();
     private readonly TrackStore _tracks = new();
     private readonly Stack<List<UndoEntry>> _undo = new();
@@ -45,8 +47,6 @@ public partial class MainWindow : Window
     }
 
     private Estimate? _estimate;
-    private string? _folder;
-    private DescriptionStore? _descriptions;
     /// <summary>Zdjęcie, którego opis jest w polu DescriptionBox.</summary>
     private PhotoItem? _descItem;
 
@@ -96,11 +96,18 @@ public partial class MainWindow : Window
 
         await LoadSavedTracksAsync();
         await LoadRefFoldersAsync();
-        if (_settings.LastFolder is { } last && Directory.Exists(last))
+        if (_settings.Folders.Count == 0 && _settings.LastFolder is { } last)
+            _settings.Folders.Add(last);
+        _folders.AddRange(_settings.Folders.Where(Directory.Exists));
+        SubfoldersCheck.IsChecked = _settings.IncludeSubfolders;
+        if (_folders.Count > 0)
+            await LoadFoldersAsync();
+        else
         {
-            _folder = last;
-            FolderBox.Text = last;
-            await LoadFolderAsync(last);
+            UpdateFolderBox();
+            StatusText.Text = "Zacznij od „Otwórz folder…” (albo przeciągnij folder na okno) lub Pomoc → Jak zacząć (kreator).";
+            if (_settings.ShowStartGuide)
+                ShowStartGuide();
         }
     }
 
@@ -302,77 +309,6 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- folder i lista
 
-    private void PickFolderBtn_Click(object sender, RoutedEventArgs e)
-    {
-        var dlg = new OpenFolderDialog { Title = "Wybierz folder ze zdjęciami" };
-        if (dlg.ShowDialog(this) != true) return;
-        FolderBox.Text = dlg.FolderName;
-        _folder = dlg.FolderName;
-        _settings.LastFolder = _folder;
-        SettingsService.Save(_settings);
-        _ = LoadFolderAsync(_folder);
-    }
-
-    private void RefreshBtn_Click(object sender, RoutedEventArgs e)
-    {
-        if (_folder is not null)
-            _ = LoadFolderAsync(_folder);
-    }
-
-    private async Task LoadFolderAsync(string folder, string? selectPath = null)
-    {
-        if (!Directory.Exists(folder)) return;
-
-        StatusText.Text = "Skanowanie folderu…";
-        var previousName = selectPath is not null ? System.IO.Path.GetFileName(selectPath) : _current?.FileName;
-
-        var found = await Task.Run(() =>
-            Directory.EnumerateFiles(folder)
-                .Where(f => ExifService.Supports(System.IO.Path.GetExtension(f)))
-                .Select(f => new PhotoItem(f, ExifService.ReadInfo(f)))
-                .ToList());
-
-        var locptPaths = new HashSet<string>(
-            found
-                .Where(i => System.IO.Path.GetFileNameWithoutExtension(i.Path)
-                    .EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase))
-                .Select(i => i.Path),
-            StringComparer.OrdinalIgnoreCase);
-        found.RemoveAll(i =>
-            System.IO.Path.GetFileNameWithoutExtension(i.Path)
-                .EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase) is false &&
-            locptPaths.Contains(ResolveTargetPath(i.Path)));
-
-        CommitDescription();
-        _descriptions = DescriptionStore.Load(folder);
-        foreach (var item in found)
-        {
-            item.ClockOffset = OffsetFor(item.Camera);
-            if (_settings.TimeOverrides.TryGetValue(item.Path, out var manual))
-                item.TimeOverride = manual;
-            item.Description = _descriptions.Get(item.FileName);
-        }
-
-        _current = null;
-        ShowDescription(null);
-        PreviewImage.Source = null;
-        var restored = previousName is null
-            ? null
-            : found.FirstOrDefault(i => string.Equals(i.FileName, previousName, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(ResolveTargetPath(i.Path), ResolveTargetPath(System.IO.Path.Combine(folder, previousName)),
-                    StringComparison.OrdinalIgnoreCase));
-        RebuildList(found, restored);
-        foreach (var item in found)
-            _ = LoadThumbAsync(item);
-
-        RefreshCameras();
-        SendPhotosToMap();
-        SendTrackToMap();
-        StatusText.Text = $"Załadowano {found.Count} zdjęć; {found.Count(i => !i.HasGps && !i.GpsError)} bez GPS, " +
-                          $"{found.Count(i => i.GpsFromDevice)} z GPS z aparatu. " +
-                          "Wybierz zdjęcie, kliknij lokalizację na mapie, a następnie użyj przycisku zapisu.";
-    }
-
     /// <summary>Sortuje wg czasu (po korekcie zegara), dzieli na sesje i odtwarza zaznaczenie.</summary>
     private void RebuildList(IEnumerable<PhotoItem> source, PhotoItem? select)
     {
@@ -443,11 +379,23 @@ public partial class MainWindow : Window
             PhotoList.ScrollIntoView(item);
     }
 
-    private async Task LoadThumbAsync(PhotoItem item)
+    /// <summary>Generuje brakujące miniatury listy; niedokończone miniatury poprzedniej listy są porzucane.</summary>
+    private void LoadThumbs(IEnumerable<PhotoItem> items)
+    {
+        var generation = ++_thumbGeneration;
+        foreach (var item in items.Where(i => i.Thumb is null).ToList())
+            _ = LoadThumbAsync(item, generation);
+    }
+
+    /// <summary>Wstrzymuje generowanie miniatur (np. na czas wczytywania — nie konkuruje o dysk).</summary>
+    private void StopThumbs() => _thumbGeneration++;
+
+    private async Task LoadThumbAsync(PhotoItem item, int generation)
     {
         await _thumbLock.WaitAsync();
         try
         {
+            if (generation != _thumbGeneration || item.Thumb is not null) return;
             var data = await Task.Run(() => Imaging.LoadBitmap(item.Path, 140, item.Orientation));
             item.Thumb = data;
         }
@@ -646,10 +594,10 @@ public partial class MainWindow : Window
 
     private void CommitDescription()
     {
-        if (_descItem is not { } item || _descriptions is null) return;
+        if (_descItem is not { } item) return;
         var text = DescriptionBox.Text.Trim();
         if (text == (item.Description ?? "")) return;
-        if (TrySaveDescription(() => _descriptions.Set(item.FileName, text)))
+        if (TrySaveDescription(() => DescriptionsFor(item.Path).Set(item.FileName, text)))
             item.Description = text.Length == 0 ? null : text;
     }
 
@@ -1074,7 +1022,7 @@ public partial class MainWindow : Window
                 if (writeTime && _settings.TimeOverrides.Remove(targetPath))
                     SettingsService.Save(_settings);
                 if (!inPlace)
-                    TrySaveDescription(() => _descriptions?.Rename(target.FileName, System.IO.Path.GetFileName(targetPath)));
+                    TrySaveDescription(() => DescriptionsFor(target.Path).Rename(target.FileName, System.IO.Path.GetFileName(targetPath)));
                 undo.Add(new UndoEntry(targetPath, targetBackup, originalBackup is null ? null : target.Path, originalBackup));
                 done++;
             }
@@ -1111,8 +1059,7 @@ public partial class MainWindow : Window
         var next = _items.Skip(lastIdx + 1).Concat(_items.Take(Math.Max(0, lastIdx)))
             .FirstOrDefault(i => !i.HasGps && !i.GpsError && !processed.Contains(i));
 
-        if (_folder is not null)
-            await LoadFolderAsync(_folder, keepSelection ? ResolveTargetPath(entries[0].Item.Path) : next?.Path);
+        await LoadFoldersAsync(keepSelection ? ResolveTargetPath(entries[0].Item.Path) : next?.Path);
         StatusText.Text = status;
     }
 
@@ -1147,8 +1094,7 @@ public partial class MainWindow : Window
             MessageBox.Show(this, string.Join("\n", errors), "Błędy cofania", MessageBoxButton.OK, MessageBoxImage.Warning);
 
         var restore = batch[0].OriginalPath ?? batch[0].TargetPath;
-        if (_folder is not null)
-            await LoadFolderAsync(_folder, restore);
+        await LoadFoldersAsync(restore);
         StatusText.Text = $"Cofnięto zapis {batch.Count - errors.Count} plików.";
     }
 
@@ -1296,7 +1242,10 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- ślady GPS
 
-    private async void LoadTrackBtn_Click(object sender, RoutedEventArgs e)
+    private async void LoadTrackBtn_Click(object sender, RoutedEventArgs e) => await LoadTrackAsync();
+
+    /// <summary>Wczytuje ślady GPS wskazane w oknie wyboru. Zwraca podsumowanie lub null (anulowano).</summary>
+    private async Task<string?> LoadTrackAsync()
     {
         var dlg = new OpenFileDialog
         {
@@ -1304,7 +1253,7 @@ public partial class MainWindow : Window
             Multiselect = true,
             Filter = "Ślady GPS (*.gpx;*.kml;*.json)|*.gpx;*.kml;*.json|Wszystkie pliki|*.*",
         };
-        if (dlg.ShowDialog(this) != true) return;
+        if (dlg.ShowDialog(this) != true) return null;
 
         var total = 0;
         var errors = new List<string>();
@@ -1331,6 +1280,7 @@ public partial class MainWindow : Window
         AfterTracksChanged();
         StatusText.Text = $"Wczytano {total} punktów śladu. Zdjęcia bez GPS w zakresie czasu śladu dostaną pozycję automatycznie " +
                           "(sprawdź też korektę zegara aparatu).";
+        return total > 0 ? $"Wczytano {total} punktów śladu ({TrackInfo.Text})." : "Nie wczytano żadnych punktów śladu.";
     }
 
     private async Task LoadSavedTracksAsync()
@@ -1375,59 +1325,6 @@ public partial class MainWindow : Window
     }
 
     // ---------------------------------------------------------------- foldery referencyjne
-
-    private async void AddRefFolderBtn_Click(object sender, RoutedEventArgs e)
-    {
-        var dlg = new OpenFolderDialog { Title = "Folder referencyjny (np. zdjęcia z telefonu z GPS)" };
-        if (dlg.ShowDialog(this) != true) return;
-        if (!_settings.ReferenceFolders.Contains(dlg.FolderName, StringComparer.OrdinalIgnoreCase))
-            _settings.ReferenceFolders.Add(dlg.FolderName);
-        SettingsService.Save(_settings);
-        await LoadRefFoldersAsync();
-    }
-
-    private async void ClearRefFoldersBtn_Click(object sender, RoutedEventArgs e)
-    {
-        _settings.ReferenceFolders.Clear();
-        SettingsService.Save(_settings);
-        await LoadRefFoldersAsync();
-    }
-
-    private async Task LoadRefFoldersAsync()
-    {
-        var folders = _settings.ReferenceFolders.Where(Directory.Exists).ToList();
-        if (folders.Count > 0)
-            StatusText.Text = "Skanowanie folderów referencyjnych…";
-        _refItems = await Task.Run(() =>
-            folders
-                .SelectMany(f =>
-                {
-                    try
-                    {
-                        return Directory.EnumerateFiles(f, "*", SearchOption.AllDirectories).ToList();
-                    }
-                    catch
-                    {
-                        return new List<string>();
-                    }
-                })
-                .Where(f => ExifService.Supports(System.IO.Path.GetExtension(f)))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Select(f => new PhotoItem(f, ExifService.ReadInfo(f)))
-                .Where(i => i.HasGps && !i.GpsError && i.HasValidDate)
-                .ToList());
-        foreach (var r in _refItems)
-            r.ClockOffset = OffsetFor(r.Camera);
-
-        RefInfo.Text = folders.Count == 0 ? "brak" : $"{folders.Count} folder(y), {_refItems.Count} zdjęć z GPS";
-        RefInfo.ToolTip = string.Join("\n", _settings.ReferenceFolders);
-        if (folders.Count > 0)
-            StatusText.Text = $"Foldery referencyjne: {_refItems.Count} zdjęć z GPS.";
-        RefreshPool();
-        RefreshCameras();
-        SendPhotosToMap();
-        RefreshCurrent();
-    }
 
     // ---------------------------------------------------------------- zegar aparatu
 
@@ -1799,14 +1696,15 @@ public partial class MainWindow : Window
 
     private void OpenInExplorerMenu_Click(object sender, RoutedEventArgs e)
     {
-        if (_folder is null || !Directory.Exists(_folder))
+        var folder = _current is not null ? System.IO.Path.GetDirectoryName(_current.Path) : _folders.FirstOrDefault();
+        if (folder is null || !Directory.Exists(folder))
         {
             ShowInfo("Najpierw wybierz folder ze zdjęciami.");
             return;
         }
         var args = _current is not null && File.Exists(_current.Path)
             ? $"/select,\"{_current.Path}\""
-            : $"\"{_folder}\"";
+            : $"\"{folder}\"";
         try
         {
             System.Diagnostics.Process.Start("explorer.exe", args);

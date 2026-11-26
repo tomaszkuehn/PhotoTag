@@ -63,7 +63,9 @@ public static class Imaging
         thread.SetApartmentState(ApartmentState.STA);
         thread.IsBackground = true;
         thread.Start();
-        thread.Join();
+        // systemowy dekoder potrafi się zawiesić na nietypowym pliku — nie blokujemy kolejki miniatur
+        if (!thread.Join(TimeSpan.FromSeconds(15)))
+            throw new TimeoutException("Miniatura filmu nie powstała w 15 s.");
         if (error is not null) throw error;
         return result!;
     }

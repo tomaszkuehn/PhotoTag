@@ -7,7 +7,14 @@ public sealed record SavedPlace(string Name, double Lat, double Lng);
 
 public sealed class AppSettings
 {
+    /// <summary>Starsze wersje: jeden folder. Teraz tylko do migracji — patrz <see cref="Folders"/>.</summary>
     public string? LastFolder { get; set; }
+    /// <summary>Wczytane foldery ze zdjęciami (lista zdjęć łączy wszystkie).</summary>
+    public List<string> Folders { get; set; } = new();
+    /// <summary>Skanowanie folderów ze zdjęciami razem z podfolderami.</summary>
+    public bool IncludeSubfolders { get; set; }
+    /// <summary>Kreator „Jak zacząć” przy starcie, gdy nie ma wczytanych folderów.</summary>
+    public bool ShowStartGuide { get; set; } = true;
     public List<string> ReferenceFolders { get; set; } = new();
     public List<string> TrackFiles { get; set; } = new();
     /// <summary>Przesunięcie zegara aparatu w sekundach (czas poprawny = czas EXIF + przesunięcie).</summary>
