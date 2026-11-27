@@ -57,6 +57,14 @@
                 <Button Content="Ułóż kolejność…" Click="OrderBtn_Click"
                         ToolTip="Osobny widok dużych miniatur: przeciągnij zdjęcie ze złą datą we właściwe miejsce na osi czasu"/>
                 <TextBlock x:Name="CountText" Margin="12,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <TextBlock Text="Pokaż:" VerticalAlignment="Center" Margin="10,0,4,0"/>
+                <ComboBox x:Name="GpsFilterCombo" Width="130" Margin="0,3" VerticalContentAlignment="Center" SelectedIndex="0"
+                          SelectionChanged="GpsFilterCombo_SelectionChanged"
+                          ToolTip="Filtr listy zdjęć: wszystkie, tylko z lokalizacją (GPS) albo tylko bez lokalizacji">
+                    <ComboBoxItem Content="wszystkie"/>
+                    <ComboBoxItem Content="z lokalizacją"/>
+                    <ComboBoxItem Content="bez lokalizacji"/>
+                </ComboBox>
 
                 <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="10,4"/>
                 <TextBlock Text="Ślad GPS:" VerticalAlignment="Center"/>
@@ -249,7 +257,8 @@
                                 ToolTip="Wszystkie zdjęcia bez GPS: ślad GPS, a gdy go brak — interpolacja między zdjęciami z GPS (Δ≤2 h)"/>
                         <Button x:Name="UndoButton" Content="Cofnij zapis (Ctrl+Z)" Click="UndoButton_Click" IsEnabled="False"/>
                         <CheckBox x:Name="ApplyAllCheck" Content="wszystkie bez GPS"/>
-                        <CheckBox x:Name="DeleteOriginalCheck" Content="usuń oryginał po zapisie"/>
+                        <CheckBox x:Name="DeleteOriginalCheck" Content="usuń oryginał po zapisie" Click="DeleteOriginalCheck_Click"
+                                  ToolTip="Po zapisie zostaje tylko plik …_LOCPT. Oryginał można odzyskać (Ctrl+Z) tylko do zamknięcia programu."/>
                     </WrapPanel>
                     <WrapPanel Orientation="Horizontal">
                         <WrapPanel.Resources>

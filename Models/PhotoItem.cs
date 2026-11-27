@@ -29,6 +29,18 @@ public sealed class PhotoItem : INotifyPropertyChanged
         TimeWritten = exif.TimeWritten;
         Camera = exif.Camera ?? UnknownCamera;
 
+        // numer zdjęcia z nazwy pliku (IMG_1234, DSC01234, P1010234…) — kolejność wykonania w danym aparacie
+        var stem = System.IO.Path.GetFileNameWithoutExtension(path);
+        if (stem.EndsWith("_LOCPT", StringComparison.OrdinalIgnoreCase))
+            stem = stem[..^"_LOCPT".Length];
+        var seq = SeqPattern.Match(stem);
+        if (seq.Success)
+        {
+            SeqPrefix = seq.Groups["p"].Value.ToUpperInvariant();
+            SeqDigits = seq.Groups["n"].Length;
+            SeqNumber = int.Parse(seq.Groups["n"].Value, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         DateFromExif = exif.DateTaken is not null;
         var fileDate = System.IO.File.Exists(path) ? System.IO.File.GetLastWriteTime(path) : DateTime.MinValue;
         DateTaken = exif.DateTaken ?? (fileDate.Year > 1990
@@ -57,7 +69,34 @@ public sealed class PhotoItem : INotifyPropertyChanged
     /// <summary>Czas lokalny z EXIF (lub data pliku), bez korekty zegara.</summary>
     public DateTime DateTaken { get; }
     public bool HasOwnDate => DateTaken != DateTime.MinValue;
-    public bool HasValidDate => HasOwnDate || TimeOverride is not null;
+    public bool HasValidDate => HasOwnDate || TimeOverride is not null || SeqTime is not null;
+
+    private static readonly System.Text.RegularExpressions.Regex SeqPattern =
+        new(@"^(?<p>[A-Za-z_\-]{0,10})(?<n>\d{3,7})$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>Przedrostek nazwy przed numerem zdjęcia (wielkie litery), np. „IMG_”.</summary>
+    public string? SeqPrefix { get; }
+    public int SeqDigits { get; }
+    /// <summary>Numer zdjęcia z nazwy pliku (licznik aparatu); null, gdy nazwa nie ma takiego wzorca.</summary>
+    public int? SeqNumber { get; }
+
+    /// <summary>
+    /// Czas lokalny oszacowany z numeru zdjęcia (sąsiednie numery tego samego aparatu z datą EXIF).
+    /// Tylko do kolejności na liście i podpowiedzi lokalizacji — nie jest zapisywany do pliku.
+    /// </summary>
+    public DateTime? SeqTime { get; private set; }
+    public string? SeqNote { get; private set; }
+    /// <summary>Czas pochodzi z szacunku po numerze (nie z EXIF ani z ręcznego ustawienia).</summary>
+    public bool TimeEstimated => TimeOverride is null && SeqTime is not null;
+
+    public void SetSequenceEstimate(DateTime? time, string? note)
+    {
+        if (SeqTime == time && SeqNote == note) return;
+        SeqTime = time;
+        SeqNote = note;
+        OnPropertyChanged(nameof(SeqTime));
+        OnPropertyChanged(nameof(DateText));
+    }
 
     /// <summary>Czas lokalny ustawiony ręcznie (przesunięcie na liście); zastępuje datę z EXIF i korektę zegara.</summary>
     public DateTime? TimeOverride
@@ -89,7 +128,7 @@ public sealed class PhotoItem : INotifyPropertyChanged
     }
 
     /// <summary>Czas lokalny po korekcie zegara aparatu.</summary>
-    public DateTime Time => TimeOverride ?? (HasOwnDate ? DateTaken + ClockOffset : DateTime.MinValue);
+    public DateTime Time => TimeOverride ?? SeqTime ?? (HasOwnDate ? DateTaken + ClockOffset : DateTime.MinValue);
 
     /// <summary>Czas UTC po korekcie; bez strefy w EXIF przyjmowana strefa systemowa.</summary>
     public DateTime TimeUtc => !HasValidDate ? DateTime.MinValue : UtcFor(Time);
@@ -125,6 +164,10 @@ public sealed class PhotoItem : INotifyPropertyChanged
             if (TimeOverride is not null)
                 return Time.ToString("yyyy-MM-dd HH:mm:ss") + " (ręcznie; " +
                        (HasOwnDate ? "EXIF " + DateTaken.ToString("yyyy-MM-dd HH:mm") : "brak daty") + ")";
+            if (TimeEstimated)
+                return "≈ " + Time.ToString("yyyy-MM-dd HH:mm") + $" ({SeqNote}; " +
+                       (DateFromExif ? "EXIF " + DateTaken.ToString("yyyy-MM-dd HH:mm")
+                        : HasOwnDate ? "data pliku " + DateTaken.ToString("yyyy-MM-dd HH:mm") : "brak daty") + ")";
             var text = Time.ToString("yyyy-MM-dd HH:mm:ss") + (DateFromExif ? "" : " (plik)");
             if (ClockOffset != TimeSpan.Zero)
                 text += $" (korekta {FormatOffset(ClockOffset)})";

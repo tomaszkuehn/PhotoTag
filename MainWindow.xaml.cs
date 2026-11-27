@@ -312,7 +312,10 @@ public partial class MainWindow : Window
     /// <summary>Sortuje wg czasu (po korekcie zegara), dzieli na sesje i odtwarza zaznaczenie.</summary>
     private void RebuildList(IEnumerable<PhotoItem> source, PhotoItem? select)
     {
-        var sorted = source
+        var all = source.ToList();
+        // zdjęcia bez GPS i bez (wiarygodnej) daty — czas z numeru zdjęcia tego samego aparatu
+        _seqEstimated = SequenceEstimator.Apply(all);
+        var sorted = all
             .OrderBy(i => i.HasValidDate ? i.TimeUtc : DateTime.MaxValue)
             .ThenBy(i => i.FileName, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -372,8 +375,46 @@ public partial class MainWindow : Window
             .ToList();
     }
 
+    // ---------------------------------------------------------------- filtr: z lokalizacją / bez lokalizacji
+
+    /// <summary>0 — wszystkie, 1 — tylko z lokalizacją, 2 — tylko bez lokalizacji.</summary>
+    private int _gpsFilter;
+    /// <summary>Liczba zdjęć z czasem oszacowanym z numeru (SequenceEstimator).</summary>
+    private int _seqEstimated;
+
+    private bool IsShown(PhotoItem i) => _gpsFilter switch
+    {
+        1 => i.HasGps && !i.GpsError,
+        2 => !i.HasGps,
+        _ => true,
+    };
+
+    /// <summary>Zdjęcia widoczne na liście (po filtrze), w kolejności listy.</summary>
+    private List<PhotoItem> ShownItems() => _gpsFilter == 0 ? _items.ToList() : _items.Where(IsShown).ToList();
+
+    private void GpsFilterCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var filter = Math.Max(0, GpsFilterCombo.SelectedIndex);
+        if (filter == _gpsFilter) return;
+        _gpsFilter = filter;
+        var current = _current;
+        CollectionViewSource.GetDefaultView(_items).Filter = filter == 0 ? null : o => IsShown((PhotoItem)o);
+        UpdateCounts();
+        if (current is not null)
+            MaintainSelection(current);
+        else if (ShownItems().FirstOrDefault() is { } first)
+            PhotoList.ScrollIntoView(first);
+    }
+
     private void MaintainSelection(PhotoItem? item)
     {
+        // zdjęcie ukryte filtrem — najbliższe widoczne (najpierw dalej na liście)
+        if (item is not null && !IsShown(item))
+        {
+            var idx = _items.IndexOf(item);
+            item = _items.Skip(idx + 1).FirstOrDefault(IsShown)
+                   ?? _items.Take(Math.Max(0, idx)).LastOrDefault(IsShown);
+        }
         PhotoList.SelectedItem = item;
         if (item is not null)
             PhotoList.ScrollIntoView(item);
@@ -488,6 +529,7 @@ public partial class MainWindow : Window
 
     private void SelectItems(List<PhotoItem> items)
     {
+        items = items.Where(IsShown).ToList();
         if (items.Count == 0) return;
         var keep = items.Contains(_current!) ? _current : items.FirstOrDefault(i => !i.HasGps) ?? items[0];
         _bulkSelecting = true;
@@ -512,26 +554,30 @@ public partial class MainWindow : Window
 
     private void SelectNextWithoutGps(bool backwards)
     {
-        if (_items.Count == 0) return;
-        var start = _current is null ? -1 : _items.IndexOf(_current);
-        for (int k = 1; k <= _items.Count; k++)
+        var list = ShownItems();
+        if (list.Count == 0) return;
+        var start = _current is null ? -1 : list.IndexOf(_current);
+        for (int k = 1; k <= list.Count; k++)
         {
-            var idx = ((start + (backwards ? -k : k)) % _items.Count + _items.Count) % _items.Count;
-            var i = _items[idx];
+            var idx = ((start + (backwards ? -k : k)) % list.Count + list.Count) % list.Count;
+            var i = list[idx];
             if (!i.HasGps && !i.GpsError)
             {
                 MaintainSelection(i);
                 return;
             }
         }
-        StatusText.Text = "Wszystkie zdjęcia mają już lokalizację.";
+        StatusText.Text = _gpsFilter == 1
+            ? "Pokazane są tylko zdjęcia z lokalizacją (filtr „Pokaż”)."
+            : "Wszystkie zdjęcia mają już lokalizację.";
     }
 
     private void MoveSelection(int delta)
     {
-        if (_items.Count == 0) return;
-        var idx = _current is null ? 0 : Math.Clamp(_items.IndexOf(_current) + delta, 0, _items.Count - 1);
-        MaintainSelection(_items[idx]);
+        var list = ShownItems();
+        if (list.Count == 0) return;
+        var idx = _current is null ? 0 : Math.Clamp(list.IndexOf(_current) + delta, 0, list.Count - 1);
+        MaintainSelection(list[idx]);
     }
 
     // ---------------------------------------------------------------- podgląd i Street View
@@ -637,9 +683,10 @@ public partial class MainWindow : Window
     /// <summary>Strzałki w dużym podglądzie: poprzednie/następne zdjęcie z listy (zaznaczenie idzie razem).</summary>
     private async void StepEnlarged(int delta)
     {
-        if (_items.Count == 0) return;
-        var idx = _current is null ? 0 : Math.Clamp(_items.IndexOf(_current) + delta, 0, _items.Count - 1);
-        var item = _items[idx];
+        var list = ShownItems();
+        if (list.Count == 0) return;
+        var idx = _current is null ? 0 : Math.Clamp(list.IndexOf(_current) + delta, 0, list.Count - 1);
+        var item = list[idx];
         if (ReferenceEquals(item, _current)) return;
         MaintainSelection(item);
         // miniatura od razu, pełna rozdzielczość po wczytaniu
@@ -649,8 +696,9 @@ public partial class MainWindow : Window
 
     private async Task LoadEnlargedAsync(PhotoItem item)
     {
-        var n = _items.IndexOf(item) + 1;
-        EnlargedHint.Text = $"{item.FileName} · {n}/{_items.Count} · ← → poprzednie/następne · Kliknij lub Esc — zamknij podgląd";
+        var list = ShownItems();
+        var n = list.IndexOf(item) + 1;
+        EnlargedHint.Text = $"{item.FileName} · {n}/{list.Count} · ← → poprzednie/następne · Kliknij lub Esc — zamknij podgląd";
         EnlargedDescription.Text = item.Description ?? "";
         EnlargedDescription.Visibility = item.HasDescription ? Visibility.Visible : Visibility.Collapsed;
         try
@@ -852,6 +900,14 @@ public partial class MainWindow : Window
     /// <summary>Ślad GPS, a gdy go brak — interpolacja między zdjęciami z GPS (Δ ≤ 2 h).</summary>
     private Estimate? GetEstimate(PhotoItem item)
     {
+        var est = GetEstimateCore(item);
+        return est is not null && item.TimeEstimated
+            ? est with { Description = $"orientacyjnie — czas oszacowany z numeru zdjęcia; {est.Description}" }
+            : est;
+    }
+
+    private Estimate? GetEstimateCore(PhotoItem item)
+    {
         if (!item.HasValidDate) return null;
 
         if (_tracks.Find(item.TimeUtc) is { } m)
@@ -937,7 +993,11 @@ public partial class MainWindow : Window
         await ApplyEntriesAsync(
             estimates.Select(x => (Item: x.Item, Point: x.Est!.Point, Direction: (double?)null)).ToList(),
             $"Zapisać automatycznie wyznaczone lokalizacje dla {estimates.Count} zdjęć bez GPS?\n\n" +
-            $"• ze śladu GPS: {fromTrack}\n• z interpolacji między zdjęciami: {estimates.Count - fromTrack}");
+            $"• ze śladu GPS: {fromTrack}\n• z interpolacji między zdjęciami: {estimates.Count - fromTrack}" +
+            (estimates.Count(x => x.Item.TimeEstimated) is > 0 and var byNumber
+                ? $"\n\nW tym {byNumber} zdjęć bez daty EXIF lub z błędną datą — ich czas oszacowano z numeru zdjęcia " +
+                  "(sąsiednie numery tego samego aparatu), więc lokalizacja jest orientacyjna."
+                : ""));
     }
 
     private async Task ApplyEntriesAsync(List<(PhotoItem Item, GeoPoint Point, double? Direction)> entries, string? batchPrompt,
@@ -988,7 +1048,8 @@ public partial class MainWindow : Window
                 }
 
                 // czas tylko z metadanych lub ustawiony ręcznie — data pliku to zwykle data kopiowania/edycji
-                var writeTime = target.DateFromExif || target.TimeOverride is not null;
+                // czas oszacowany z numeru zdjęcia nie trafia do pliku
+                var writeTime = (target.DateFromExif && !target.TimeEstimated) || target.TimeOverride is not null;
                 var tmp = targetPath + ".tmp";
                 var moved = false;
                 try
@@ -1054,13 +1115,33 @@ public partial class MainWindow : Window
         }
 
         // następne zdjęcie bez GPS po ostatnim zapisanym
-        var lastIdx = entries.Max(e => _items.IndexOf(e.Item));
+        var shown = ShownItems();
+        var lastIdx = entries.Max(e => shown.IndexOf(e.Item));
         var processed = entries.Select(e => e.Item).ToHashSet();
-        var next = _items.Skip(lastIdx + 1).Concat(_items.Take(Math.Max(0, lastIdx)))
+        var next = shown.Skip(lastIdx + 1).Concat(shown.Take(Math.Max(0, lastIdx)))
             .FirstOrDefault(i => !i.HasGps && !i.GpsError && !processed.Contains(i));
 
         await LoadFoldersAsync(keepSelection ? ResolveTargetPath(entries[0].Item.Path) : next?.Path);
         StatusText.Text = status;
+    }
+
+    /// <summary>Włączenie „usuń oryginał po zapisie” wymaga potwierdzenia — oryginał da się odzyskać tylko do zamknięcia programu.</summary>
+    private void DeleteOriginalCheck_Click(object sender, RoutedEventArgs e)
+    {
+        if (DeleteOriginalCheck.IsChecked != true) return;
+        var answer = MessageBox.Show(this,
+            "Włączyć usuwanie oryginałów?\n\n" +
+            "Po zapisie lokalizacji w folderze zostanie tylko nowy plik …_LOCPT, a oryginalne zdjęcie (np. IMG_1234.jpg) " +
+            "zniknie z folderu.\n\n" +
+            "RYZYKO UTRATY DANYCH:\n" +
+            "• Oryginał można przywrócić (Ctrl+Z / „Cofnij”) tylko do zamknięcia programu — przy następnym uruchomieniu " +
+            "kopie są kasowane i oryginału nie da się już odzyskać (nie trafia do Kosza).\n" +
+            "• Plik …_LOCPT ma zmienione metadane (GPS, ewentualnie datę). Jeśli zapis lub program do zdjęć źle je " +
+            "obsłuży, nie będzie do czego wrócić.\n\n" +
+            "Zalecane: zostaw tę opcję wyłączoną albo miej kopię zapasową zdjęć.",
+            "PhotoTag — usuwanie oryginałów", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes)
+            DeleteOriginalCheck.IsChecked = false;
     }
 
     private async void UndoButton_Click(object sender, RoutedEventArgs e)
@@ -1126,8 +1207,9 @@ public partial class MainWindow : Window
                 "Usuń zdjęcia", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
             return;
 
-        var lastIdx = _items.IndexOf(sel[^1]);
-        var next = _items.Skip(lastIdx + 1).Concat(_items.Take(lastIdx).Reverse()).FirstOrDefault(i => !sel.Contains(i));
+        var shown = ShownItems();
+        var lastIdx = shown.IndexOf(sel[^1]);
+        var next = shown.Skip(lastIdx + 1).Concat(shown.Take(Math.Max(0, lastIdx)).Reverse()).FirstOrDefault(i => !sel.Contains(i));
         var deleted = new List<PhotoItem>();
         var errors = new List<string>();
         foreach (var item in sel)
@@ -1641,7 +1723,9 @@ public partial class MainWindow : Window
     private void UpdateCounts()
     {
         var noGps = _items.Count(i => !i.HasGps && !i.GpsError);
-        CountText.Text = $"zdjęć: {_items.Count} | bez GPS: {noGps}";
+        CountText.Text = $"zdjęć: {_items.Count} | bez GPS: {noGps}" +
+                         (_seqEstimated == 0 ? "" : $" | czas z numeru: {_seqEstimated}") +
+                         (_gpsFilter == 0 ? "" : $" | pokazane: {_items.Count(IsShown)}");
     }
 
     private void UpdateStatus(PhotoItem? item)

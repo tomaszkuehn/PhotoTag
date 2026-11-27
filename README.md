@@ -5,6 +5,9 @@ Aplikacja desktopowa (WPF, .NET 8) do szybkiego uzupełniania współrzędnych G
 ## Funkcje
 
 - Przeglądanie folderu z filtrami `.jpg/.jpeg/.tif/.tiff` — miniaturki, status GPS, data zdjęcia (EXIF `DateTimeOriginal` → `DateTimeDigitized` → data pliku, oznaczona „(plik)").
+- **Łatwy start**: przy pierwszym uruchomieniu kreator „Jak zacząć” (też w menu Pomoc); „Otwórz folder…” lub przeciągnięcie folderu na okno; **„+ Dodaj folder…”** dołącza kolejne foldery do jednej listy; opcja **„z podfolderami”** (gdy wybrany folder ma zdjęcia tylko w podfolderach, program pyta, czy je wczytać); pasek postępu wczytywania z przyciskiem „Przerwij”. Poradnik PDF dostępny w menu **Pomoc**.
+- **Filtr listy „Pokaż:”** — wszystkie / z lokalizacją / bez lokalizacji (nie jest zapamiętywany). Nawigacja (`N`, strzałki, duży podgląd, przejście po zapisie) działa w obrębie pokazanych zdjęć; licznik u góry podaje liczbę pokazanych.
+- **Czas z numeru zdjęcia** (`Services/SequenceEstimator.cs`): zdjęcie bez GPS bez daty EXIF albo z datą wyraźnie odstającą od sąsiadów w numeracji (np. reset zegara) dostaje orientacyjny czas z sąsiednich numerów (`IMG_1233` → `IMG_1235`) tego samego modelu aparatu — interpolacja do 50 numerów i 12 h, przy sąsiedzie tylko z jednej strony do 5 numerów. Na liście `≈ 2024-05-10 10:10 (szac. z numeru: …)`, w liczniku „czas z numeru: N”, podpowiedź lokalizacji oznaczona „orientacyjnie”. Szacunek służy tylko do kolejności, sesji i podpowiedzi — nie jest zapisywany do pliku (czas ręczny ma pierwszeństwo).
 - Sortowanie wg daty; panel pojedynczego zdjęcia z dużym podglądem (miniaturka/podgląd, kliknięcie otwiera powiększenie na cały panel prawy, zamknięcie kliknięciem lub `Esc`). W powiększeniu strzałki `←`/`→` (także `↑`/`↓`, `PgUp`/`PgDn`, spacja) przechodzą do poprzedniego/następnego zdjęcia z listy, `Home`/`End` — pierwsze/ostatnie; u dołu nazwa i numer zdjęcia.
 - Mapa OpenStreetMap (Leaflet 1.9.4 w WebView2, lokalny host wirtualny `maphost`):
   - klik / przeciąganie markera = wybór współrzędnych,
@@ -37,12 +40,13 @@ Aplikacja desktopowa (WPF, .NET 8) do szybkiego uzupełniania współrzędnych G
   - zapis do wszystkich zaznaczonych zdjęć albo (checkbox) wszystkich bez GPS,
   - „Uzupełnij automatycznie” — wszystkie zdjęcia bez GPS ze śladu GPS lub interpolacji,
   - **Cofnij** (Ctrl+Z) — przywraca stan sprzed ostatnich zapisów (kopie w `%TEMP%\PhotoTag\undo`, czyszczone przy starcie),
+  - „usuń oryginał po zapisie” (domyślnie wyłączone, niezapamiętywane) — przy zaznaczaniu ostrzeżenie o ryzyku utraty danych z potwierdzeniem (domyślnie „Nie”); oryginał trafia do kopii cofania i da się go przywrócić tylko do zamknięcia programu,
   - po zapisie automatycznie zaznaczane jest kolejne zdjęcie bez GPS.
 - **Kopiowanie lokalizacji między zdjęciami**: prawy klik na zdjęciu z GPS → „Kopiuj lokalizację z …” (`Ctrl+Shift+C`), potem zaznacz inne zdjęcia → „Wklej lokalizację … do zaznaczonych” (`Ctrl+Shift+V`). Kopiowany jest punkt i kierunek; po potwierdzeniu zapis od razu (jak `Enter`, z cofaniem). `Ctrl+C`/`Ctrl+V` dalej kopiuje punkt mapy jako tekst przez schowek.
 - **Usuwanie**: `Del` lub prawy klik → „Usuń” zmienia nazwę zaznaczonych plików na `…jpg.bak` (np. `IMG_1.jpg.bak`; gdy zajęte — `IMG_1.jpg.2.bak`) i zdejmuje je z listy. Przy pliku `_LOCPT` tak samo zmieniany jest jego oryginał, żeby nie wrócił na listę. Przywrócenie: usuń `.bak` z nazwy i odśwież folder.
 - Opis zdjęcia: pole „Opis” nad przyciskami — `Enter` (lub kliknięcie gdzie indziej) zapisuje, `Esc` anuluje. Opisy trafiają do pliku `opisy.json` w folderze ze zdjęciami (`{ "nazwa pliku": "opis" }`); na liście widać je kursywą, w dużym podglądzie u dołu. Opis przechodzi na kopię `_LOCPT` po zapisie lokalizacji.
 - Skróty (działają też przy fokusie na mapie): `Enter` zapis, `Del` usuń (→ `.bak`), `N` / `Shift+N` następne/poprzednie bez GPS, `G` sesja, `S` Street View, `Ctrl+C`/`Ctrl+V`, `Ctrl+Shift+C`/`Ctrl+Shift+V` lokalizacja zdjęcia → zaznaczone, `Ctrl+Z`, `Alt+↑`/`Alt+↓` przesunięcie na osi czasu, `Esc`.
-- Ustawienia (ostatni folder, ślady, foldery ref., zegary, miejsca, ręczne czasy zdjęć): `%APPDATA%\PhotoTag\settings.json`.
+- Ustawienia (otwarte foldery, „z podfolderami”, ślady, foldery ref., zegary, miejsca, ręczne czasy zdjęć): `%APPDATA%\PhotoTag\settings.json`.
 
 ## Uruchomienie
 
@@ -70,6 +74,10 @@ Wymaga .NET SDK 8 oraz połączenia z internetem (kafelki mapy, Nominatim, Overp
 - `Services/Imaging.cs` — dekodowanie miniatur/podglądów z uwzględnieniem orientacji EXIF; klatki filmów przez `IShellItemImageFactory`.
 - `Assets/map.html` — mapa: warstwy, wyszukiwanie, komunikacja z WPF przez `window.chrome.webview.postMessage` / `setView(lat,lng,zoom)`.
 - `Services/VideoService.cs` — odczyt i zapis metadanych MP4/MOV (drzewo atomów moov, korekta `stco`/`co64`).
+- `Services/SequenceEstimator.cs` — orientacyjny czas zdjęć bez GPS z numeru w nazwie pliku (sąsiedzi tego samego aparatu, wykrywanie odstających dat EXIF).
+- `Services/FolderPicker.cs` — systemowe okno wyboru folderu.
+- `MainWindow.Folders.cs` — wiele folderów, podfoldery, wczytywanie z postępem i przerwaniem; `MainWindow.Start.cs` + `StartWindow` — kreator „Jak zacząć”.
+- `docs/PhotoTag-poradnik.pdf` — poradnik użytkownika (kopiowany obok exe, otwierany z menu Pomoc).
 - `MainWindow.Timeline.cs` — ręczny czas zdjęć: wstawianie na osi czasu, cofanie (4 kroki), `Alt+↑/↓`, menu kontekstowe.
 - `OrderWindow.xaml(.cs)` — widok „Ułóż kolejność”: siatka dużych miniatur, przeciąganie z linią wstawienia, cofanie.
 - `MainWindow.xaml(.cs)` — UI, sugerowanie punktów, zapis zbiorczy, zarządzanie trybami ( mapa / Street View / powiększenie). WebView2 jest natywnym HWND i wypada NAD elementami WPF — nakładki wymagają zwijania panelu mapy (`MapView.Visibility`).

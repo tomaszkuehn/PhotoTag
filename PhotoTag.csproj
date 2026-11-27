@@ -11,7 +11,7 @@
     <ApplicationIcon>Assets\PhotoTag.ico</ApplicationIcon>
 
     <!-- Wersja i autorstwo — pokazywane w „Pomoc → O programie…” -->
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Product>PhotoTag</Product>
     <Authors>Tomasz Kuehn</Authors>
     <Company>Tomasz Kuehn</Company>
